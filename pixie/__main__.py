@@ -53,7 +53,11 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    if sys.platform == "win32" and sys.stdout:
+    if sys.stdout is None:  # started with pythonw (no console) -> log to a file
+        from .config import ROOT
+
+        sys.stdout = sys.stderr = open(ROOT / "pixie.log", "w", encoding="utf-8", buffering=1)
+    elif sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8")  # emojis in the Windows console
     if "--console" in sys.argv:
         asyncio.run(main())

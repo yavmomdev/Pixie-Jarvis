@@ -6,3 +6,4 @@ config.yaml
 .spotify_cache
 .cache
 drafts/
+pixie.log

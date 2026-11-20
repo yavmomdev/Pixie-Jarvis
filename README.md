@@ -115,6 +115,10 @@ copy config.example.yaml config.yaml
 4. The first time you play something, a browser opens once so you can log in.
 
 ### 4. Run
+
+> ⚡ **Shortcut:** just double-click `start-pixie.bat`. It installs Python, Ollama, the AI model and all
+> packages if they are missing, and then starts Pixie. You can skip steps 1, 2 and 4.
+
 ```bash
 python -m pixie              # popup UI, hold Right Alt to talk
 pythonw -m pixie             # same, without a console window
