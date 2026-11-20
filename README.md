@@ -22,7 +22,7 @@ The AI runs **100% locally** through [Ollama](https://ollama.com), so it's free 
 | 🎮 **Modes** | "Activate game mode" opens Discord, plays your liked songs and launches your game | ✅ |
 | 🎙️ **Voice** | Hold **Right Alt** and talk, with local Whisper speech-to-text | ✅ |
 | ⌨️ **Typing** | **Double-tap Right Alt** to type a command instead | ✅ |
-| 🔊 **Spoken replies** | Pixie talks back | 🔜 |
+| 💬 **Text replies** | Pixie answers in the popup only. It never talks out loud | ✅ |
 | 📁 **Files** | "Clean up my Downloads", "Find the PDF from yesterday" | 🔜 |
 
 ### The popup
@@ -197,7 +197,6 @@ Pixie-Jarvis/
 
 - [x] **v0.1**: text commands → local LLM → tools (apps, Spotify, search, email drafts, modes), background tasks + notifications
 - [x] **v0.2**: center popup UI, hold Right Alt to talk (local Whisper), double-tap to type, tray icon
-- [ ] **v0.3**: spoken replies (`piper` / `edge-tts`), optional "Hey Pixie" wake word
 - [ ] **v0.4**: file tools (find, organize, clean up Downloads)
 - [ ] **v0.5**: more modes (study mode, focus mode) and auto-start with Windows
 - [ ] Later: remembering preferences, multi-step tasks, plugins
