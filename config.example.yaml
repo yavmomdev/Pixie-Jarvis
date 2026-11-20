@@ -1,0 +1,27 @@
+# Copy this file to config.yaml and fill it in. config.yaml is git-ignored (keeps your keys private).
+
+assistant_name: Pixie
+
+ollama:
+  host: http://localhost:11434
+  model: qwen2.5:7b        # good at tool calling; try llama3.1:8b or qwen2.5:14b too
+
+spotify:
+  # Create a free app at https://developer.spotify.com/dashboard
+  # and add this exact Redirect URI there: http://127.0.0.1:8888/callback
+  client_id: ""
+  client_secret: ""
+  redirect_uri: http://127.0.0.1:8888/callback
+  liked_songs_limit: 100
+
+search:
+  max_results: 5
+
+notifications: true
+
+# Optional: names -> what to launch. Anything in your Start Menu is found automatically,
+# so you only need this for nicknames or apps that aren't found.
+apps:
+  # spotify: "spotify:"
+  # discord: "C:\\Users\\<you>\\AppData\\Local\\Discord\\Update.exe --processStart Discord.exe"
+  # cs2: "steam://rungameid/730"

@@ -1,0 +1,10 @@
+name: game mode
+triggers:
+  - activate game mode
+  - game mode
+  - game mode on
+delay: 2           # seconds between steps
+steps:
+  - open_app: {name: discord}
+  - play_liked_songs: {shuffle: true}
+  # - open_app: {name: valorant}
