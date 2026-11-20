@@ -1,12 +1,13 @@
 # Pixie 🧚 — my own Jarvis
 
 Pixie is a personal desktop AI assistant for Windows, inspired by Jarvis and Nixi.
-You tell it what to do (by text now, by voice soon), and it does the work **in the background**:
-windows don't pop up and nothing steals focus from what you're doing.
+**Hold Right Alt, say what you want, let go.** A small popup appears in the middle of your screen,
+Pixie answers, and the work happens **in the background**. Nothing steals focus from what you're doing.
 The AI runs **100% locally** through [Ollama](https://ollama.com), so it's free and private.
 
-> **Status:** 🚧 v0.1: text commands, background tasks, apps, Spotify, web search, email drafts, modes.
-> Voice is next.
+<p align="center"><img src="docs/popup.png" width="560" alt="Pixie popup: listening, thinking, reply, done, typing"></p>
+
+> **Status:** 🚧 v0.2: popup UI, hold-to-talk voice, background tasks, apps, Spotify, web search, email drafts, modes.
 
 ---
 
@@ -19,8 +20,24 @@ The AI runs **100% locally** through [Ollama](https://ollama.com), so it's free 
 | 🔎 **Search** | "What's the weather in Sofia?", "Search best RTX 4070 laptops": you get a short summary, no browser tab | ✅ |
 | ✉️ **Emails** | "Write an email to my professor asking for an extension": the draft is **copied to your clipboard** | ✅ |
 | 🎮 **Modes** | "Activate game mode" opens Discord, plays your liked songs and launches your game | ✅ |
-| 🎙️ **Voice** | "Hey Pixie…" wake word + speech-to-text + spoken replies | 🔜 v0.2 |
+| 🎙️ **Voice** | Hold **Right Alt** and talk, with local Whisper speech-to-text | ✅ |
+| ⌨️ **Typing** | **Double-tap Right Alt** to type a command instead | ✅ |
+| 🔊 **Spoken replies** | Pixie talks back | 🔜 |
 | 📁 **Files** | "Clean up my Downloads", "Find the PDF from yesterday" | 🔜 |
+
+### The popup
+| You do | Pixie shows |
+|---|---|
+| **Hold Right Alt** | 🔵 *Listening*: the orb and bars react to your voice |
+| **Release** | 🟣 *Thinking*: what you said, while it decides |
+| | 💜 *Reply*, e.g. "On it 👍", then the popup fades away |
+| (task finishes) | 🟢 *Done*, e.g. "Playing your Liked Songs on shuffle 🎵" |
+| **Double-tap Right Alt** | ⌨️ a text box. Enter sends, Esc closes |
+
+- The popup **never steals focus** (except the text box), so it's safe to use mid-game.
+- Pressing Right Alt together with another key (AltGr shortcuts like `AltGr+Q` → `@`) is ignored,
+  so normal typing never triggers Pixie.
+- Pixie lives in the **system tray**: right-click it to type a command or quit.
 
 ### Background-first
 - Pixie replies instantly ("On it 👍") and runs the work as a **background task**, so you can keep
@@ -39,8 +56,8 @@ Anything destructive (like deleting files) will always ask for confirmation firs
 ## 🧠 How it works
 
 ```
- you> open spotify and play my liked songs
-        │
+ 🎙️ hold Right Alt: "open spotify and play my liked songs"
+        │  Whisper (local) → text
         ▼
  ┌────────────┐     ┌──────────────┐     ┌────────────────────┐
  │   Brain    │ ──► │ Task runner  │ ──► │       Tools        │
@@ -49,7 +66,7 @@ Anything destructive (like deleting files) will always ask for confirmation firs
  │ picks tool │     └──────────────┘     └────────────────────┘
  └────────────┘            │
         │                  ▼
- Pixie> On it 👍     🔔 "Playing your Liked Songs on shuffle 🎵"
+ popup: "On it 👍"   popup: "Playing your Liked Songs on shuffle 🎵"
 ```
 
 1. **Brain** (`pixie/brain.py`) sends your message to the local LLM with a list of tools. The LLM
@@ -99,17 +116,19 @@ copy config.example.yaml config.yaml
 
 ### 4. Run
 ```bash
-python -m pixie
+python -m pixie              # popup UI, hold Right Alt to talk
+pythonw -m pixie             # same, without a console window
+python -m pixie --console    # text-only mode in the terminal
 ```
-```
-🧚 Pixie is ready (qwen2.5:7b via Ollama).
-you> open spotify and play my liked songs
-Pixie> On it 👍
-you> search who won the champions league last year
-Pixie> On it 👍
-🔔 Pixie: Playing your Liked Songs on shuffle 🎵
-🔔 Pixie: ...
-```
+The first start downloads the Whisper speech model (`small` ≈ 500 MB), and after that it's instant.
+Then **hold Right Alt** and say *"open Spotify and play my liked songs"*.
+
+> 💡 **GPU speech-to-text:** Whisper runs on your NVIDIA GPU if CUDA libraries are available
+> (`pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`), otherwise it falls back to the CPU automatically.
+> With a GPU, set `voice.stt_model: large-v3-turbo` for the best accuracy (also for Bulgarian).
+>
+> 🎮 **Games running as administrator** can block global hotkeys. If Right Alt doesn't work in a
+> game, run Pixie as administrator too.
 
 ---
 
@@ -118,6 +137,8 @@ Pixie> On it 👍
 Everything lives in `config.yaml` (it's git-ignored, so your keys stay private):
 
 - `ollama.model`: which local model to use
+- `ui.hotkey`: the hold-to-talk key (default `alt_r`, Right Alt); `ui.position`: `center` / `top` / `bottom`
+- `voice.stt_model` / `voice.language`: the Whisper model and language (`null` = auto-detect)
 - `apps`: nicknames for apps that aren't found automatically (anything in the Start Menu is found
   automatically). Steam games work as `steam://rungameid/<id>`.
 - `spotify`: API keys
@@ -145,7 +166,14 @@ steps:
 ```
 Pixie-Jarvis/
 ├── pixie/
-│   ├── __main__.py      # python -m pixie  (text interface)
+│   ├── __main__.py      # python -m pixie  (popup UI, or --console)
+│   ├── hotkey.py        # hold Right Alt to talk, double-tap to type
+│   ├── ui/
+│   │   ├── app.py       # tray icon + wiring: voice → brain → tasks → popup
+│   │   └── overlay.py   # the center popup (orb, mic bars, animations)
+│   ├── voice/
+│   │   ├── recorder.py  # microphone
+│   │   └── stt.py       # local Whisper speech-to-text
 │   ├── brain.py         # LLM → tool calls
 │   ├── tasks.py         # background task runner
 │   ├── llm.py           # Ollama client
@@ -168,8 +196,8 @@ Pixie-Jarvis/
 ## 🗺️ Roadmap
 
 - [x] **v0.1**: text commands → local LLM → tools (apps, Spotify, search, email drafts, modes), background tasks + notifications
-- [ ] **v0.2**: voice: "Hey Pixie" wake word (`openWakeWord`), speech-to-text (`faster-whisper`), spoken replies (`piper` / `edge-tts`)
-- [ ] **v0.3**: system-tray icon + global hotkey text box (no console window)
+- [x] **v0.2**: center popup UI, hold Right Alt to talk (local Whisper), double-tap to type, tray icon
+- [ ] **v0.3**: spoken replies (`piper` / `edge-tts`), optional "Hey Pixie" wake word
 - [ ] **v0.4**: file tools (find, organize, clean up Downloads)
 - [ ] **v0.5**: more modes (study mode, focus mode) and auto-start with Windows
 - [ ] Later: remembering preferences, multi-step tasks, plugins

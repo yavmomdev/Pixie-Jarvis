@@ -56,3 +56,24 @@ class TaskRunner:
     async def wait_all(self) -> None:
         if self._running:
             await asyncio.gather(*self._running, return_exceptions=True)
+
+
+class BackgroundLoop:
+    """Runs a TaskRunner on its own asyncio loop in a daemon thread.
+
+    Used by the UI, whose main thread belongs to Qt. submit() is thread-safe.
+    """
+
+    def __init__(self, assistant_name: str = "Pixie"):
+        import threading
+
+        self.loop = asyncio.new_event_loop()
+        threading.Thread(target=self.loop.run_forever, daemon=True, name="pixie-tasks").start()
+
+        async def make() -> TaskRunner:
+            return TaskRunner(assistant_name=assistant_name)
+
+        self.runner: TaskRunner = asyncio.run_coroutine_threadsafe(make(), self.loop).result()
+
+    def submit(self, tool: str, args: dict | None = None) -> None:
+        self.loop.call_soon_threadsafe(self.runner.submit, tool, args or {})

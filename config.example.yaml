@@ -17,6 +17,17 @@ spotify:
 search:
   max_results: 5
 
+ui:
+  hotkey: alt_r            # HOLD to talk, DOUBLE-TAP to type. Right Alt / AltGr by default
+  hold_delay: 0.15         # seconds you must hold before Pixie starts listening
+  position: center         # center | top | bottom
+
+voice:
+  stt_model: small         # Whisper model: base, small, medium, large-v3-turbo (best with a GPU)
+  device: auto             # auto | cuda | cpu
+  language: null           # null = auto-detect, or "en", "bg" ...
+  mic: null                # null = default microphone
+
 notifications: true
 
 # Optional: names -> what to launch. Anything in your Start Menu is found automatically,

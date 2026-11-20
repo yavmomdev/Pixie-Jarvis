@@ -1,7 +1,9 @@
-"""Run Pixie:  python -m pixie
+"""Run Pixie:
+    python -m pixie            -> popup UI (hold Right Alt to talk)
+    python -m pixie --console  -> text-only console mode
 
-Type a command and press Enter. Pixie answers instantly and does the work in
-the background - you can keep typing new commands while old ones run.
+In console mode, type a command and press Enter. Pixie answers instantly and
+does the work in the background.
 """
 
 from __future__ import annotations
@@ -51,6 +53,16 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    if sys.platform == "win32":
+    if sys.platform == "win32" and sys.stdout:
         sys.stdout.reconfigure(encoding="utf-8")  # emojis in the Windows console
-    asyncio.run(main())
+    if "--console" in sys.argv:
+        asyncio.run(main())
+    else:
+        try:
+            from .ui.app import run
+        except ImportError as e:
+            print(f"UI not available ({e}). Run: pip install -r requirements.txt")
+            print("Starting console mode instead.\n")
+            asyncio.run(main())
+        else:
+            run()
