@@ -31,6 +31,8 @@ DEFAULTS: dict[str, Any] = {
 def _merge(base: dict, override: dict) -> dict:
     out = copy.deepcopy(base)
     for key, value in (override or {}).items():
+        if value is None and isinstance(out.get(key), dict):
+            continue  # e.g. "apps:" with every line commented out -> keep the default {}
         if isinstance(value, dict) and isinstance(out.get(key), dict):
             out[key] = _merge(out[key], value)
         else:

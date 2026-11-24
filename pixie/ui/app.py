@@ -62,11 +62,11 @@ class Controller(QObject):
         super().__init__()
         load_all()
         self.name = CONFIG.get("assistant_name", "Pixie")
-        ui_cfg = CONFIG.get("ui", {})
+        ui_cfg = (CONFIG.get("ui") or {})
         key = str(ui_cfg.get("hotkey", "alt_r"))
         key_label = "Right Alt" if key.lower() in RIGHT_ALT_NAMES else key
 
-        self.recorder = Recorder(device=CONFIG.get("voice", {}).get("mic"))
+        self.recorder = Recorder(device=(CONFIG.get("voice") or {}).get("mic"))
         self.stt = Transcriber()
         self.brain = Brain()
         self.tasks = BackgroundLoop(self.name)

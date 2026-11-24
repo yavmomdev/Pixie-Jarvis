@@ -37,7 +37,7 @@ def _start_menu_shortcuts() -> dict[str, str]:
 def resolve_app(name: str) -> str | None:
     """Find what to launch: config.yaml 'apps' first, then Start Menu shortcuts."""
     key = name.lower().strip()
-    apps = {k.lower(): v for k, v in CONFIG.get("apps", {}).items()}
+    apps = {k.lower(): v for k, v in (CONFIG.get("apps") or {}).items()}
     if key in apps:
         return apps[key]
     shortcuts = _start_menu_shortcuts()

@@ -11,7 +11,7 @@ from ..config import CONFIG
 
 class Transcriber:
     def __init__(self) -> None:
-        cfg = CONFIG.get("voice", {})
+        cfg = (CONFIG.get("voice") or {})
         self.model_size = cfg.get("stt_model", "small")
         self.device = cfg.get("device", "auto")
         self.language = cfg.get("language") or None  # None = auto-detect
