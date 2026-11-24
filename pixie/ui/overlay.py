@@ -148,8 +148,8 @@ class Overlay(QWidget):
         self._set("LISTENING", f"Speak now · release {self.hotkey_label} to send", "listening", dim=True)
         self._pop_in()
 
-    def show_transcribing(self) -> None:
-        self._set("TRANSCRIBING", "One sec…", "transcribing", dim=True)
+    def show_transcribing(self, note: str = "One sec…") -> None:
+        self._set("TRANSCRIBING", note, "transcribing", dim=True)
         self._pop_in()
 
     def show_thinking(self, said: str) -> None:

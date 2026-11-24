@@ -107,9 +107,14 @@ class Controller(QObject):
         threading.Thread(target=self._warm_up, daemon=True).start()
 
     def _warm_up(self) -> None:
+        import time
+
+        start = time.time()
         try:
             self.stt.load()
             print(f"🎙️  Speech model ready ({self.stt.model_size} on {self.stt.device}).")
+            if time.time() - start > 8:  # it was downloading -> let the user know voice works now
+                self.result.emit("Voice is ready 🎙️ Hold Right Alt to talk.")
         except Exception as e:
             self.error.emit(f"Couldn't load the speech model: {e}")
 
@@ -137,7 +142,13 @@ class Controller(QObject):
         if audio.size < SAMPLE_RATE * MIN_SECONDS:
             self.overlay.cancel()
             return
-        self.overlay.show_transcribing()
+        if self.stt.ready:
+            self.overlay.show_transcribing()
+        else:
+            self.overlay.show_transcribing(
+                f"Downloading the speech model ({self.stt.model_size}), first time only. "
+                "Your command will run when it's done. Tip: double-tap Right Alt to type meanwhile."
+            )
 
         def job() -> None:
             try:

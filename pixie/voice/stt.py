@@ -18,6 +18,10 @@ class Transcriber:
         self._model = None
         self._lock = threading.Lock()
 
+    @property
+    def ready(self) -> bool:
+        return self._model is not None
+
     def _create(self, device: str):
         from faster_whisper import WhisperModel
 
