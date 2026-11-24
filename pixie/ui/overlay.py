@@ -217,11 +217,22 @@ class Overlay(QWidget):
             self.move(self._target_pos())
 
     def _target_pos(self) -> QPoint:
-        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        # always on the monitor where your mouse is
+        cursor = QCursor.pos()
+        screen = QGuiApplication.screenAt(cursor) or QGuiApplication.primaryScreen()
         g = screen.availableGeometry()
         x = g.center().x() - self.width() // 2
+        if self.position == "mouse":
+            # right below the mouse pointer; stays put while visible, kept inside the screen
+            if self.isVisible():
+                return self.pos()
+            x = max(g.left(), min(cursor.x() - self.width() // 2, g.right() - self.width()))
+            y = cursor.y() + 12
+            if y + self.height() > g.bottom():
+                y = cursor.y() - self.height() - 12
+            return QPoint(x, max(g.top(), y))
         if self.position == "top":
-            y = g.top() + int(g.height() * 0.16)
+            y = g.top() + int(g.height() * 0.04)
         elif self.position == "bottom":
             y = g.bottom() - int(g.height() * 0.12) - self.height()
         else:  # center

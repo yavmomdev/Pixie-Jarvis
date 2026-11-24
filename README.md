@@ -149,7 +149,7 @@ Then **hold Right Alt** and say *"open Spotify and play my liked songs"*.
 Everything lives in `config.yaml` (it's git-ignored, so your keys stay private):
 
 - `ollama.model`: which local model to use
-- `ui.hotkey`: the hold-to-talk key (default `alt_r`, Right Alt); `ui.position`: `center` / `top` / `bottom`
+- `ui.hotkey`: the hold-to-talk key (default `alt_r`, Right Alt); `ui.position`: `top` (default) / `center` / `bottom` / `mouse` (right under your pointer). The popup always shows on the monitor where your mouse is
 - `voice.stt_model` / `voice.language`: the Whisper model and language (`null` = auto-detect)
 - `apps`: your own nicknames. Usually not needed, because Pixie finds your apps by itself (see below).
 - `spotify`: API keys

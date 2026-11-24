@@ -78,7 +78,7 @@ class Controller(QObject):
             level_source=lambda: self.recorder.level,
             name=self.name,
             hotkey_label=key_label,
-            position=ui_cfg.get("position", "center"),
+            position=ui_cfg.get("position", "top"),
         )
         self.overlay.submitted.connect(self.on_typed)
 

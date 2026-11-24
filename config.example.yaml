@@ -20,7 +20,7 @@ search:
 ui:
   hotkey: alt_r            # HOLD to talk, DOUBLE-TAP to type. Right Alt / AltGr by default
   hold_delay: 0.15         # seconds you must hold before Pixie starts listening
-  position: center         # center | top | bottom
+  position: top            # top | center | bottom | mouse (under the pointer). Always on the monitor with your mouse
 
 voice:
   stt_model: small         # Whisper model: base, small, medium, large-v3-turbo (best with a GPU)
