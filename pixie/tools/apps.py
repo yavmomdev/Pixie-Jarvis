@@ -1,85 +1,63 @@
-"""Open and close apps/games - in the background (minimized, without stealing focus)."""
+"""Open, close and list apps/games on this PC - launched in the background where possible."""
 
 from __future__ import annotations
 
-import difflib
 import os
 import subprocess
 import sys
-from functools import lru_cache
-from pathlib import Path
 
-from ..config import CONFIG
+from ..app_index import INDEX, App, normalize
 from . import tool
 
 IS_WINDOWS = sys.platform == "win32"
 SW_SHOWMINNOACTIVE = 7  # minimized, does NOT take focus
+CREATE_NO_WINDOW = 0x08000000
 
 
-@lru_cache(maxsize=1)
-def _start_menu_shortcuts() -> dict[str, str]:
-    """Map 'app name' -> shortcut path, from the Windows Start Menu (+ Desktop)."""
-    dirs = [
-        Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "Microsoft/Windows/Start Menu/Programs",
-        Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
-        Path.home() / "Desktop",
-    ]
-    found: dict[str, str] = {}
-    for d in dirs:
-        if not d.is_dir():
-            continue
-        for p in d.rglob("*"):
-            if p.suffix.lower() in (".lnk", ".url"):
-                found.setdefault(p.stem.lower(), str(p))
-    return found
-
-
-def resolve_app(name: str) -> str | None:
-    """Find what to launch: config.yaml 'apps' first, then Start Menu shortcuts."""
-    key = name.lower().strip()
-    apps = {k.lower(): v for k, v in (CONFIG.get("apps") or {}).items()}
-    if key in apps:
-        return apps[key]
-    shortcuts = _start_menu_shortcuts()
-    if key in shortcuts:
-        return shortcuts[key]
-    # fuzzy: "valorant" -> "VALORANT", "vs code" -> "Visual Studio Code"
-    contains = [k for k in shortcuts if key in k]
-    if contains:
-        return shortcuts[min(contains, key=len)]
-    close = difflib.get_close_matches(key, list(apps) + list(shortcuts), n=1, cutoff=0.6)
-    if close:
-        return apps.get(close[0]) or shortcuts[close[0]]
-    return None
-
-
-def launch_background(target: str) -> None:
-    """Launch an exe / shortcut / URI (spotify:, steam://...) minimized and unfocused."""
+def launch_background(target: str, kind: str = "shortcut") -> None:
+    """Start something minimized and without stealing focus (when Windows allows it)."""
     if not IS_WINDOWS:
         subprocess.Popen(target, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
-    if target.lower().endswith(".exe") and os.path.exists(target):
+    if kind == "store":
+        # Start-menu AppID (works for Microsoft Store apps and normal apps alike)
+        subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{target}"])
+    elif target.lower().endswith(".exe") and os.path.exists(target):
         si = subprocess.STARTUPINFO()
         si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         si.wShowWindow = SW_SHOWMINNOACTIVE
         subprocess.Popen([target], startupinfo=si, creationflags=subprocess.DETACHED_PROCESS)
-    else:
-        # shortcuts and URIs: let Windows resolve them, start minimized
-        subprocess.Popen(f'start "" /min "{target}"', shell=True)
+    elif os.path.exists(target):  # .lnk / .url shortcut
+        subprocess.Popen(f'start "" /min "{target}"', shell=True, creationflags=CREATE_NO_WINDOW)
+    elif "://" in target or target.endswith(":"):  # steam://, com.epicgames..., spotify:
+        os.startfile(target)
+    else:  # a command from config.yaml, e.g. "C:\...\Update.exe --processStart Discord.exe"
+        subprocess.Popen(f'start "" /min {target}', shell=True, creationflags=CREATE_NO_WINDOW)
+
+
+def resolve_app(name: str) -> str | None:
+    """Kept for other tools (Spotify): returns a launch target or None."""
+    app = INDEX.find(name, use_llm=False)
+    return app.target if app else None
+
+
+def launch_app(app: App) -> None:
+    launch_background(app.target, app.kind)
 
 
 @tool(
     "open_app",
-    "Open an application or game on the PC in the background (e.g. Discord, Steam, Valorant, Chrome).",
-    {"name": {"type": "string", "description": "App or game name, e.g. 'discord'"}},
+    "Open ONE installed application or game on this PC in the background "
+    "(e.g. Spotify, Discord, Steam, Valorant, Chrome, VS Code). Call it once per app.",
+    {"name": {"type": "string", "description": "App or game name as the user said it, e.g. 'discord'"}},
     ["name"],
 )
 def open_app(name: str) -> str:
-    target = resolve_app(name)
-    if not target:
-        return f"I couldn't find an app called '{name}'. Add it under 'apps' in config.yaml."
-    launch_background(target)
-    return f"Opened {name} in the background."
+    app = INDEX.find(name)
+    if not app:
+        return f"I couldn't find '{name}' on this PC. You can add it under 'apps' in config.yaml."
+    launch_app(app)
+    return f"Opened {app.name} in the background."
 
 
 @tool(
@@ -91,14 +69,41 @@ def open_app(name: str) -> str:
 def close_app(name: str) -> str:
     import psutil
 
-    key = name.lower().replace(" ", "")
-    closed = 0
+    wanted = {normalize(name)}
+    app = INDEX.find(name, use_llm=False)
+    if app:
+        wanted.add(app.key)
+        if app.target.lower().endswith(".exe"):
+            wanted.add(normalize(os.path.splitext(os.path.basename(app.target))[0]))
+    wanted.discard("")
+
+    closed = set()
     for proc in psutil.process_iter(["name"]):
-        pname = (proc.info["name"] or "").lower()
-        if key in pname.replace(" ", ""):
+        pname = normalize(os.path.splitext(proc.info["name"] or "")[0])
+        if pname and any(w in pname or pname in w for w in wanted if len(w) >= 3):
             try:
                 proc.terminate()
-                closed += 1
+                closed.add(proc.info["name"])
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-    return f"Closed {name}." if closed else f"{name} doesn't seem to be running."
+    shown = app.name if app else name
+    return f"Closed {shown}." if closed else f"{shown} doesn't seem to be running."
+
+
+@tool(
+    "list_apps",
+    "List installed apps or games on this PC, optionally filtered (e.g. 'games', 'steam', 'adobe').",
+    {"filter": {"type": "string", "description": "Optional word to filter by, or 'games'"}},
+)
+def list_apps(filter: str = "") -> str:
+    apps = INDEX.all()
+    f = filter.lower().strip()
+    if f in ("game", "games"):
+        apps = [a for a in apps if a.kind in ("steam", "epic")]
+    elif f:
+        apps = [a for a in apps if f in a.name.lower() or f == a.kind]
+    if not apps:
+        return f"No apps found{f' for {filter}' if f else ''}."
+    names = sorted({a.name for a in apps}, key=str.lower)
+    more = f" (+{len(names) - 40} more)" if len(names) > 40 else ""
+    return f"{len(names)} found: " + ", ".join(names[:40]) + more

@@ -12,7 +12,8 @@ from functools import lru_cache
 
 from ..config import CONFIG, ROOT
 from . import tool
-from .apps import launch_background, resolve_app
+from ..app_index import INDEX
+from .apps import launch_app, launch_background
 
 SCOPES = "user-library-read user-read-playback-state user-modify-playback-state"
 
@@ -41,7 +42,8 @@ def _device_id(timeout: float = 20) -> str:
     sp = _sp()
     devices = sp.devices().get("devices", [])
     if not devices:
-        launch_background(resolve_app("spotify") or "spotify:")
+        app = INDEX.find("spotify", use_llm=False)
+        launch_app(app) if app else launch_background("spotify:")
         deadline = time.time() + timeout
         while time.time() < deadline and not devices:
             time.sleep(1.5)

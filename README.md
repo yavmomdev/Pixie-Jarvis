@@ -143,9 +143,19 @@ Everything lives in `config.yaml` (it's git-ignored, so your keys stay private):
 - `ollama.model`: which local model to use
 - `ui.hotkey`: the hold-to-talk key (default `alt_r`, Right Alt); `ui.position`: `center` / `top` / `bottom`
 - `voice.stt_model` / `voice.language`: the Whisper model and language (`null` = auto-detect)
-- `apps`: nicknames for apps that aren't found automatically (anything in the Start Menu is found
-  automatically). Steam games work as `steam://rungameid/<id>`.
+- `apps`: your own nicknames. Usually not needed, because Pixie finds your apps by itself (see below).
 - `spotify`: API keys
+
+### How Pixie finds your apps
+At startup Pixie scans your PC and builds a list of everything you can open:
+- every app in the **Start menu** and on your **Desktop**
+- **Microsoft Store apps** (Spotify, WhatsApp… from the Store)
+- installed **Steam** games and **Epic Games**
+
+You can say it however you like: *"open discord"*, *"open dc"*, *"launch gta 5"*, *"open vs code"*,
+even typos like *"spotfy"*. If the name isn't an obvious match, the local AI picks the right app from
+your list, and if you don't have the app at all, Pixie tells you instead of guessing.
+Ask *"what games do I have?"* to see the list. New apps are picked up automatically.
 
 ### Modes
 A mode is a YAML file in `modes/`, holding a list of tool calls:

@@ -14,11 +14,13 @@ import sys
 from .brain import Brain
 from .config import CONFIG
 from .tasks import TaskRunner
+from . import app_index
 from .tools import TOOLS, load_all
 
 
 async def main() -> None:
     load_all()
+    app_index.warm_up()  # scan installed apps in the background
     name = CONFIG.get("assistant_name", "Pixie")
     brain = Brain()
     runner = TaskRunner(assistant_name=name)

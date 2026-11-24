@@ -22,6 +22,7 @@ from ..brain import Brain
 from ..config import CONFIG
 from ..hotkey import RIGHT_ALT_NAMES, PushToTalk
 from ..tasks import BackgroundLoop
+from .. import app_index
 from ..tools import load_all
 from ..voice.recorder import SAMPLE_RATE, Recorder
 from ..voice.stt import Transcriber
@@ -61,6 +62,7 @@ class Controller(QObject):
     def __init__(self) -> None:
         super().__init__()
         load_all()
+        app_index.warm_up()  # scan installed apps in the background
         self.name = CONFIG.get("assistant_name", "Pixie")
         ui_cfg = (CONFIG.get("ui") or {})
         key = str(ui_cfg.get("hotkey", "alt_r"))
