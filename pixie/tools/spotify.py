@@ -221,6 +221,7 @@ def spotify_control(action: str, volume: int | None = None) -> str:
         cur = sp.current_playback()
         if not cur or not cur.get("item"):
             return "Nothing is playing to like."
-        sp.current_user_saved_tracks_add([cur["item"]["uri"]])
+        # PUT /me/library (Spotify removed PUT /me/tracks in Feb 2026)
+        sp._put("me/library", uris=cur["item"]["uri"])
         return f"Added {cur['item']['name']} to your Liked Songs 💚"
     return f"Spotify: {action.replace('_', ' ')} ✔"
