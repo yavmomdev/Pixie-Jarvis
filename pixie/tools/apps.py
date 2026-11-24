@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from ..app_index import INDEX, App, normalize
+from ..winctl import keep_in_background
 from . import tool
 
 IS_WINDOWS = sys.platform == "win32"
@@ -41,23 +42,36 @@ def resolve_app(name: str) -> str | None:
     return app.target if app else None
 
 
-def launch_app(app: App) -> None:
-    launch_background(app.target, app.kind)
+def launch_app(app: App, show: bool | None = None) -> None:
+    """Launch an indexed app. Apps stay in the background; games are shown (you want to play)."""
+    if show is None:
+        show = app.kind in ("steam", "epic")
+    if show:
+        launch_background(app.target, app.kind)
+    else:
+        keep_in_background(lambda: launch_background(app.target, app.kind))
 
 
 @tool(
     "open_app",
     "Open ONE installed application or game on this PC in the background "
     "(e.g. Spotify, Discord, Steam, Valorant, Chrome, VS Code). Call it once per app.",
-    {"name": {"type": "string", "description": "App or game name as the user said it, e.g. 'discord'"}},
+    {
+        "name": {"type": "string", "description": "App or game name as the user said it, e.g. 'discord'"},
+        "show": {
+            "type": "boolean",
+            "description": "true only if the user explicitly wants to SEE/switch to it. Default: background",
+        },
+    },
     ["name"],
 )
-def open_app(name: str) -> str:
+def open_app(name: str, show: bool | None = None) -> str:
     app = INDEX.find(name)
     if not app:
         return f"I couldn't find '{name}' on this PC. You can add it under 'apps' in config.yaml."
-    launch_app(app)
-    return f"Opened {app.name} in the background."
+    launch_app(app, show)
+    shown = show if show is not None else app.kind in ("steam", "epic")
+    return f"Opened {app.name}." if shown else f"Opened {app.name} in the background."
 
 
 @tool(

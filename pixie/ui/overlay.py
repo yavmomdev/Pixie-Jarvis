@@ -166,6 +166,10 @@ class Overlay(QWidget):
         if self.state in BUSY:
             self._queue.append(text)
             return
+        if self.state == "result" and self.isVisible() and self.text.text():
+            # several tasks finished together -> stack them (max 4 lines)
+            lines = (self.text.text().split("\n") + [text])[-4:]
+            text = "\n".join(lines)
         self._set("DONE", text, "result")
         self._pop_in()
         self._auto_hide(text)

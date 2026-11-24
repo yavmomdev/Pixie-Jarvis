@@ -7,15 +7,20 @@ and a free developer app from https://developer.spotify.com/dashboard.
 from __future__ import annotations
 
 import random
+import re
 import time
 from functools import lru_cache
 
+from ..app_index import INDEX, normalize
 from ..config import CONFIG, ROOT
+from ..winctl import keep_in_background
 from . import tool
-from ..app_index import INDEX
 from .apps import launch_app, launch_background
 
-SCOPES = "user-library-read user-read-playback-state user-modify-playback-state"
+SCOPES = (
+    "user-library-read user-library-modify user-read-playback-state "
+    "user-modify-playback-state user-read-currently-playing playlist-read-private"
+)
 
 
 @lru_cache(maxsize=1)
@@ -37,13 +42,16 @@ def _sp():
     )
 
 
-def _device_id(timeout: float = 20) -> str:
-    """Return an active Spotify device; start Spotify minimized if none is running."""
+def _device_id(timeout: float = 25) -> str:
+    """Return an active Spotify device; start Spotify in the background if none is running."""
     sp = _sp()
     devices = sp.devices().get("devices", [])
     if not devices:
         app = INDEX.find("spotify", use_llm=False)
-        launch_app(app) if app else launch_background("spotify:")
+        if app:
+            launch_app(app, show=False)
+        else:
+            keep_in_background(lambda: launch_background("spotify:"))
         deadline = time.time() + timeout
         while time.time() < deadline and not devices:
             time.sleep(1.5)
@@ -53,6 +61,55 @@ def _device_id(timeout: float = 20) -> str:
     active = next((d for d in devices if d.get("is_active")), None)
     computer = next((d for d in devices if d.get("type") == "Computer"), None)
     return (active or computer or devices[0])["id"]
+
+
+def _best(items: list[dict], wanted: str, artist: str = "") -> dict | None:
+    """Pick the result whose name (and artist) match best; Spotify's order breaks ties."""
+    if not items:
+        return None
+    w, a = normalize(wanted), normalize(artist)
+
+    def score(it: dict) -> float:
+        name = normalize(it.get("name", ""))
+        s = 2.0 if name == w else 1.0 if w and (w in name or name in w) else 0.0
+        artists = " ".join(x.get("name", "") for x in it.get("artists", []))
+        if a and a in normalize(artists):
+            s += 1.5
+        return s
+
+    return max(enumerate(items), key=lambda p: (score(p[1]), -p[0]))[1]
+
+
+def _split_by(query: str) -> tuple[str, str]:
+    """'numb by linkin park' -> ('numb', 'linkin park')."""
+    m = re.match(r"(.+?)\s+(?:by|from|от|на)\s+(.+)", query.strip(), re.I)
+    return (m[1], m[2]) if m else (query.strip(), "")
+
+
+def _find(query: str, kind: str) -> dict | None:
+    sp = _sp()
+    title, artist = _split_by(query)
+    if kind == "playlist":
+        # your own / followed playlists first ("play my gym playlist")
+        mine = sp.current_user_playlists(limit=50)["items"]
+        q = normalize(re.sub(r"\b(my|playlist)\b", "", query, flags=re.I))
+        own = [p for p in mine if p and q and q in normalize(p["name"])]
+        if own:
+            return own[0]
+    q = f"track:{title} artist:{artist}" if kind == "track" and artist else (
+        f"album:{title} artist:{artist}" if kind == "album" and artist else query
+    )
+    items = sp.search(q=q, type=kind, limit=10)[f"{kind}s"]["items"]
+    if not items and q != query:
+        items = sp.search(q=query, type=kind, limit=10)[f"{kind}s"]["items"]
+    items = [i for i in items if i]
+    return _best(items, title if artist else query, artist)
+
+
+def _who(item: dict) -> str:
+    artists = ", ".join(a["name"] for a in item.get("artists", [])[:2])
+    owner = (item.get("owner") or {}).get("display_name")
+    return f" by {artists}" if artists else (f" ({owner})" if owner else "")
 
 
 @tool(
@@ -78,36 +135,66 @@ def play_liked_songs(shuffle: bool = True) -> str:
 
 @tool(
     "spotify_play",
-    "Search Spotify and play a song, artist, album or playlist.",
+    "Search Spotify and play something: a song, an album, an artist, or a playlist (incl. the user's own). "
+    "Examples: 'numb by linkin park' (track), 'meteora' (album), 'eminem' (artist), 'my gym playlist' (playlist).",
     {
-        "query": {"type": "string", "description": "What to play, e.g. 'Blinding Lights' or 'Eminem'"},
+        "query": {"type": "string", "description": "What to play, e.g. 'Blinding Lights by The Weeknd'"},
         "kind": {
             "type": "string",
-            "enum": ["track", "artist", "album", "playlist"],
-            "description": "What kind of thing it is (default track)",
+            "enum": ["track", "album", "artist", "playlist"],
+            "description": "track = a song (default), album, artist, or playlist",
         },
     },
     ["query"],
 )
 def spotify_play(query: str, kind: str = "track") -> str:
-    sp = _sp()
-    items = sp.search(q=query, type=kind, limit=1)[f"{kind}s"]["items"]
-    if not items:
+    kind = kind if kind in ("track", "album", "artist", "playlist") else "track"
+    item = _find(query, kind)
+    if not item:
         return f"Couldn't find '{query}' on Spotify."
-    item = items[0]
-    device = _device_id()
+    sp, device = _sp(), _device_id()
     if kind == "track":
         sp.start_playback(device_id=device, uris=[item["uri"]])
     else:
         sp.start_playback(device_id=device, context_uri=item["uri"])
-    return f"Playing {item['name']} 🎵"
+    label = {"track": "", "album": "the album ", "artist": "", "playlist": "the playlist "}[kind]
+    return f"Playing {label}{item['name']}{_who(item)} 🎵"
+
+
+@tool(
+    "spotify_queue",
+    "Add a song to the Spotify queue (plays after the current one).",
+    {"query": {"type": "string", "description": "The song, e.g. 'Numb by Linkin Park'"}},
+    ["query"],
+)
+def spotify_queue(query: str) -> str:
+    item = _find(query, "track")
+    if not item:
+        return f"Couldn't find '{query}' on Spotify."
+    _sp().add_to_queue(item["uri"], device_id=_device_id())
+    return f"Added {item['name']}{_who(item)} to the queue ➕"
+
+
+@tool("spotify_now_playing", "Tell what song is playing on Spotify right now.")
+def spotify_now_playing() -> str:
+    cur = _sp().current_playback()
+    if not cur or not cur.get("item"):
+        return "Nothing is playing on Spotify."
+    item = cur["item"]
+    state = "Playing" if cur.get("is_playing") else "Paused"
+    return f"{state}: {item['name']}{_who(item)}"
 
 
 @tool(
     "spotify_control",
-    "Control Spotify playback: pause, resume, next, previous, or set volume.",
+    "Control Spotify: pause, resume, next, previous, volume, shuffle on/off, repeat on/off, "
+    "or like (save the current song to Liked Songs).",
     {
-        "action": {"type": "string", "enum": ["pause", "resume", "next", "previous", "volume"]},
+        "action": {
+            "type": "string",
+            "enum": ["pause", "resume", "next", "previous", "volume", "shuffle_on", "shuffle_off",
+                     "repeat_on", "repeat_off", "like"],
+        },
         "volume": {"type": "integer", "description": "0-100, only for action=volume"},
     },
     ["action"],
@@ -123,5 +210,17 @@ def spotify_control(action: str, volume: int | None = None) -> str:
     elif action == "previous":
         sp.previous_track()
     elif action == "volume":
-        sp.volume(max(0, min(100, int(volume if volume is not None else 50))))
-    return f"Spotify: {action} ✔"
+        v = max(0, min(100, int(volume if volume is not None else 50)))
+        sp.volume(v)
+        return f"Spotify volume {v}% 🔊"
+    elif action in ("shuffle_on", "shuffle_off"):
+        sp.shuffle(action == "shuffle_on")
+    elif action in ("repeat_on", "repeat_off"):
+        sp.repeat("context" if action == "repeat_on" else "off")
+    elif action == "like":
+        cur = sp.current_playback()
+        if not cur or not cur.get("item"):
+            return "Nothing is playing to like."
+        sp.current_user_saved_tracks_add([cur["item"]["uri"]])
+        return f"Added {cur['item']['name']} to your Liked Songs 💚"
+    return f"Spotify: {action.replace('_', ' ')} ✔"

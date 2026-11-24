@@ -15,15 +15,16 @@ The AI runs **100% locally** through [Ollama](https://ollama.com), so it's free 
 
 | Category | Example commands | Status |
 |---|---|---|
-| 🎵 **Spotify** | "Open Spotify and play my liked songs", "Play Eminem", "Skip", "Pause", "Volume 30" | ✅ |
-| 🚀 **Apps & games** | "Open Discord", "Launch Valorant", "Close Chrome" | ✅ |
+| 🎵 **Spotify** | "Play Numb by Linkin Park", "Play the album Meteora", "Play Eminem", "Play my gym playlist", "Queue Blinding Lights", "What's playing?", "Like this song", "Skip", "Shuffle on" | ✅ |
+| 🚀 **Apps & games** | "Open Discord", "Open dc and spotify", "Launch GTA 5", "Close Chrome", "What games do I have?" | ✅ |
+| 🌐 **Browser** | "Open YouTube", "Play lofi hip hop on YouTube", "Open emag.bg", "Search RTX 4070 on emag", "Show me Sofia on maps" | ✅ |
+| 🖥️ **Windows** | "Volume 30", "Mute", "Pause the music", "Brightness up", "Dark mode", "Lock the PC", "Shut down" (60 s, cancellable), "Take a screenshot", "Battery?" | ✅ |
 | 🔎 **Search** | "What's the weather in Sofia?", "Search best RTX 4070 laptops": you get a short summary, no browser tab | ✅ |
 | ✉️ **Emails** | "Write an email to my professor asking for an extension": the draft is **copied to your clipboard** | ✅ |
 | 🎮 **Modes** | "Activate game mode" opens Discord, plays your liked songs and launches your game | ✅ |
 | 🎙️ **Voice** | Hold **Right Alt** and talk, with local Whisper speech-to-text | ✅ |
 | ⌨️ **Typing** | **Double-tap Right Alt** to type a command instead | ✅ |
 | 💬 **Text replies** | Pixie answers in the popup only. It never talks out loud | ✅ |
-| 📁 **Files** | "Clean up my Downloads", "Find the PDF from yesterday" | 🔜 |
 
 ### The popup
 | You do | Pixie shows |
@@ -40,6 +41,11 @@ The AI runs **100% locally** through [Ollama](https://ollama.com), so it's free 
 - Pixie lives in the **system tray**: right-click it to type a command or quit.
 
 ### Background-first
+- **Apps open in the background.** If an app pops up anyway (Discord, Store apps…), Pixie instantly
+  minimizes that new window and gives focus back to you. Your other windows are never touched.
+  Games are the exception: they open normally. Say *"open X and show it"* to see an app.
+- **Websites open in a new, minimized browser window** of your default browser (Brave, Chrome, Edge, Firefox).
+  YouTube keeps playing from there.
 - Pixie replies instantly ("On it 👍") and runs the work as a **background task**, so you can keep
   typing new commands or keep gaming.
 - When a task finishes you get a **Windows notification**.
@@ -113,6 +119,8 @@ copy config.example.yaml config.yaml
 2. Set the Redirect URI to `http://127.0.0.1:8888/callback` and select **Web API**.
 3. Put the **Client ID** and **Client Secret** into `config.yaml`.
 4. The first time you play something, a browser opens once so you can log in.
+   (After updating Pixie you may be asked to log in once more, because Pixie now asks for extra
+   permissions to read your playlists and like songs.)
 
 ### 4. Run
 
@@ -181,6 +189,8 @@ steps:
 Pixie-Jarvis/
 ├── pixie/
 │   ├── __main__.py      # python -m pixie  (popup UI, or --console)
+│   ├── app_index.py     # finds every app & game on the PC
+│   ├── winctl.py        # keeps launched windows in the background
 │   ├── hotkey.py        # hold Right Alt to talk, double-tap to type
 │   ├── ui/
 │   │   ├── app.py       # tray icon + wiring: voice → brain → tasks → popup
@@ -194,8 +204,10 @@ Pixie-Jarvis/
 │   ├── notify.py        # Windows notifications
 │   ├── config.py
 │   └── tools/           # one file per skill
-│       ├── apps.py      # open / close apps & games
-│       ├── spotify.py   # liked songs, play, pause, skip, volume
+│       ├── apps.py      # open / close / list apps & games
+│       ├── browser.py   # websites, YouTube, search in the browser
+│       ├── system.py    # volume, media keys, brightness, dark mode, power, screenshot
+│       ├── spotify.py   # search & play songs/albums/artists/playlists, queue, like
 │       ├── search.py    # DuckDuckGo + LLM summary
 │       ├── email.py     # email drafts → clipboard
 │       └── modes.py     # run modes from modes/*.yaml
