@@ -160,9 +160,10 @@ class Controller(QObject):
                 self.nothing.emit()
                 return
             self.heard.emit(text)
-            self._handle(text)
+            self.worker.submit(self._handle, text)
 
-        self.worker.submit(job)
+        # transcribe in its own thread, so typed commands never wait for Whisper
+        threading.Thread(target=job, daemon=True, name="pixie-stt").start()
 
     @Slot()
     def on_nothing(self) -> None:
