@@ -15,6 +15,8 @@ DEFAULTS: dict[str, Any] = {
     "ollama": {
         "host": "http://localhost:11434",
         "model": "qwen2.5:7b",
+        "keep_alive": "2h",
+        "num_ctx": 8192,
     },
     "spotify": {
         "client_id": "",

@@ -1,7 +1,7 @@
 """Email drafting. Pixie only WRITES the email - it never sends anything.
 
-The draft is copied to the clipboard and saved to drafts/ so you can paste it
-into Gmail/Outlook yourself.
+The draft appears in the popup with a Copy button (and is saved to drafts/),
+so you can paste it into Gmail/Outlook yourself.
 """
 
 from __future__ import annotations
@@ -10,12 +10,12 @@ from datetime import datetime
 
 from .. import llm
 from ..config import ROOT
-from . import tool
+from . import Copyable, tool
 
 
 @tool(
     "draft_email",
-    "Write an email draft and copy it to the clipboard (it is never sent).",
+    "Write an email draft for the user to copy (it is never sent).",
     {
         "recipient": {"type": "string", "description": "Who it's for, e.g. 'my professor', 'HR at Acme'"},
         "about": {"type": "string", "description": "What the email should say / ask for"},
@@ -37,12 +37,4 @@ def draft_email(recipient: str, about: str, tone: str = "polite", language: str 
     path = drafts / f"{datetime.now():%Y-%m-%d_%H-%M-%S}.txt"
     path.write_text(text, encoding="utf-8")
 
-    try:
-        import pyperclip
-
-        pyperclip.copy(text)
-        where = "copied to your clipboard"
-    except Exception:
-        where = f"saved to {path}"
-    subject = text.splitlines()[0].removeprefix("Subject:").strip() if text else ""
-    return f"Email draft '{subject}' is ready and {where} ✉️"
+    return Copyable(text)  # shown in the popup with a Copy button; also saved in drafts/

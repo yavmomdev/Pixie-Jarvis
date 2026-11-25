@@ -9,7 +9,13 @@ does the work in the background.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
+
+# keep pixie.log readable (Hugging Face prints harmless warnings on Windows)
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
 from .brain import Brain
 from .config import CONFIG
@@ -64,6 +70,11 @@ if __name__ == "__main__":
     if "--console" in sys.argv:
         asyncio.run(main())
     else:
+        from .single import already_running
+
+        if already_running():
+            print("Pixie is already running (look for the orb in the tray).")
+            sys.exit(0)
         try:
             from .ui.app import run
         except ImportError as e:

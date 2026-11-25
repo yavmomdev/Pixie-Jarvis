@@ -8,6 +8,9 @@ import numpy as np
 
 from ..config import CONFIG
 
+# words Whisper often gets wrong in commands
+VOCAB = "Pixie, Spotify, Discord, YouTube, Steam, liked songs, playlist, Valorant, VS Code."
+
 
 class Transcriber:
     def __init__(self) -> None:
@@ -39,12 +42,19 @@ class Transcriber:
                 self.device = "cpu"  # e.g. CUDA libraries missing
                 self._model = self._create("cpu")
 
+    @property
+    def on_gpu(self) -> bool:
+        inner = getattr(self._model, "model", None)
+        return getattr(inner, "device", self.device) == "cuda"
+
     def _run(self, audio: np.ndarray) -> str:
         segments, _info = self._model.transcribe(
             audio,
             language=self.language,
-            beam_size=5,
+            beam_size=5 if self.on_gpu else 1,  # beam search is cheap on a GPU, slow on a CPU
             vad_filter=True,  # skip silence -> fewer hallucinations
+            condition_on_previous_text=False,  # short commands: no carry-over between segments
+            initial_prompt=VOCAB,  # helps Whisper spell names right
         )
         return " ".join(s.text.strip() for s in segments).strip()
 

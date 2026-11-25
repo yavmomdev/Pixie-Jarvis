@@ -6,6 +6,7 @@ and a free developer app from https://developer.spotify.com/dashboard.
 
 from __future__ import annotations
 
+import functools
 import random
 import re
 import time
@@ -42,8 +43,58 @@ def _sp():
     )
 
 
+def _friendly(fn):
+    """Turn Spotify API errors into messages that say what to do."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            reason = str(getattr(e, "reason", "") or "")
+            status = getattr(e, "http_status", 0)
+            text = str(e).lower()
+            if reason == "PREMIUM_REQUIRED" or (status == 403 and "premium" in text):
+                raise RuntimeError("Spotify only lets apps control playback with Spotify Premium.") from None
+            if reason == "NO_ACTIVE_DEVICE" or "no active device" in text:
+                raise RuntimeError("Spotify isn't ready yet. Try again in a few seconds.") from None
+            if status == 401:
+                raise RuntimeError("Spotify login expired. Say the command again to log in.") from None
+            if status == 429:
+                raise RuntimeError("Spotify says too many requests. Wait a minute and try again.") from None
+            raise
+
+    return wrapper
+
+
+_liked_cache: tuple[float, list[str]] = (0.0, [])
+
+
+def _liked_uris(limit: int) -> list[str]:
+    """Your Liked Songs, cached for 10 minutes (saves 2+ requests per 'play my liked songs')."""
+    global _liked_cache
+    if time.time() - _liked_cache[0] < 600 and len(_liked_cache[1]) >= min(limit, 1):
+        return list(_liked_cache[1])
+    sp = _sp()
+    uris: list[str] = []
+    page = sp.current_user_saved_tracks(limit=50)
+    while page and len(uris) < limit:
+        uris += [item["track"]["uri"] for item in page["items"] if item.get("track")]
+        page = sp.next(page) if page.get("next") else None
+    _liked_cache = (time.time(), uris)
+    return list(uris)
+
+
+def _stop_youtube() -> None:
+    from ..player import PLAYER
+
+    if PLAYER.playing:
+        PLAYER.stop()
+
+
 def _device_id(timeout: float = 25) -> str:
     """Return an active Spotify device; start Spotify in the background if none is running."""
+    _stop_youtube()  # only one thing plays at a time
     sp = _sp()
     devices = sp.devices().get("devices", [])
     if not devices:
@@ -117,14 +168,11 @@ def _who(item: dict) -> str:
     "Play the user's Spotify Liked Songs in the background.",
     {"shuffle": {"type": "boolean", "description": "Shuffle the songs (default true)"}},
 )
+@_friendly
 def play_liked_songs(shuffle: bool = True) -> str:
     sp = _sp()
     limit = int(CONFIG["spotify"].get("liked_songs_limit", 100))
-    uris: list[str] = []
-    page = sp.current_user_saved_tracks(limit=50)
-    while page and len(uris) < limit:
-        uris += [item["track"]["uri"] for item in page["items"] if item.get("track")]
-        page = sp.next(page) if page.get("next") else None
+    uris = _liked_uris(limit)
     if not uris:
         return "Your Liked Songs list is empty."
     if shuffle:
@@ -147,6 +195,7 @@ def play_liked_songs(shuffle: bool = True) -> str:
     },
     ["query"],
 )
+@_friendly
 def spotify_play(query: str, kind: str = "track") -> str:
     kind = kind if kind in ("track", "album", "artist", "playlist") else "track"
     item = _find(query, kind)
@@ -167,6 +216,7 @@ def spotify_play(query: str, kind: str = "track") -> str:
     {"query": {"type": "string", "description": "The song, e.g. 'Numb by Linkin Park'"}},
     ["query"],
 )
+@_friendly
 def spotify_queue(query: str) -> str:
     item = _find(query, "track")
     if not item:
@@ -176,6 +226,7 @@ def spotify_queue(query: str) -> str:
 
 
 @tool("spotify_now_playing", "Tell what song is playing on Spotify right now.")
+@_friendly
 def spotify_now_playing() -> str:
     cur = _sp().current_playback()
     if not cur or not cur.get("item"):
@@ -199,6 +250,7 @@ def spotify_now_playing() -> str:
     },
     ["action"],
 )
+@_friendly
 def spotify_control(action: str, volume: int | None = None) -> str:
     sp = _sp()
     if action == "pause":

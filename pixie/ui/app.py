@@ -17,7 +17,7 @@ from PySide6.QtCore import QObject, QPointF, Qt, Signal, Slot
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap, QRadialGradient
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from .. import notify
+from .. import llm, notify
 from ..brain import Brain
 from ..config import CONFIG
 from ..hotkey import RIGHT_ALT_NAMES, PushToTalk
@@ -54,8 +54,8 @@ class Controller(QObject):
     hold_cancel = Signal()
     double_tap = Signal()
     heard = Signal(str)
-    reply = Signal(str)
-    result = Signal(str)
+    reply = Signal(str, bool)
+    result = Signal(str, bool)
     error = Signal(str)
     nothing = Signal()
 
@@ -92,7 +92,9 @@ class Controller(QObject):
         self.error.connect(self.overlay.show_error)
         self.nothing.connect(self.on_nothing)
 
-        notify.add_listener(lambda _title, msg: self.result.emit(msg))
+        notify.add_listener(
+            lambda _title, msg, copy, error: self.error.emit(msg) if error else self.result.emit(msg, copy)
+        )
 
         self.ptt = PushToTalk(
             on_start=self.hold_start.emit,
@@ -103,8 +105,9 @@ class Controller(QObject):
             hold_delay=float(ui_cfg.get("hold_delay", 0.15)),
         )
         self.ptt.start()
-        # load Whisper in the background so the first command is fast
+        # load Whisper and the LLM in the background so the first command is fast
         threading.Thread(target=self._warm_up, daemon=True).start()
+        threading.Thread(target=llm.warm_up, daemon=True, name="pixie-llm-warmup").start()
 
     def _warm_up(self) -> None:
         import time
@@ -114,7 +117,7 @@ class Controller(QObject):
             self.stt.load()
             print(f"🎙️  Speech model ready ({self.stt.model_size} on {self.stt.device}).")
             if time.time() - start > 8:  # it was downloading -> let the user know voice works now
-                self.result.emit("Voice is ready 🎙️ Hold Right Alt to talk.")
+                self.result.emit("Voice is ready 🎙️ Hold Right Alt to talk.", False)
         except Exception as e:
             self.error.emit(f"Couldn't load the speech model: {e}")
 
@@ -186,7 +189,7 @@ class Controller(QObject):
         for tool_name, args in decision.calls:
             self.tasks.submit(tool_name, args)
         print(f"{self.name}> {decision.reply}")
-        self.reply.emit(decision.reply or "…")
+        self.reply.emit(decision.reply or "…", decision.copyable)
 
 
 def run() -> None:

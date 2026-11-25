@@ -38,13 +38,24 @@ from PySide6.QtGui import (
     QPen,
     QRadialGradient,
 )
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
 from . import win
 
 WIDTH = 640  # panel width
 MIN_H = 116  # panel min height
 MAX_H = 380
+MAX_TEXT_H = 340  # longer text (e.g. an email) scrolls
+COPY_HIDE_MS = 30000  # copyable text stays up longer (and never hides while the mouse is on it)
 PAD = 26  # transparent margin around the panel for the glow
 RADIUS = 30
 ORB = 60
@@ -92,7 +103,8 @@ class Overlay(QWidget):
         self._phase = 0.0
         self._level = 0.0
         self._levels: deque[float] = deque([0.0] * BARS, maxlen=BARS)
-        self._queue: list[str] = []
+        self._queue: list[tuple[str, bool, bool]] = []  # (text, copyable, is_error)
+        self._copy_text = ""
         self._prev_window = None
         self._anim: QParallelAnimationGroup | None = None
 
@@ -112,6 +124,34 @@ class Overlay(QWidget):
         self.text.setWordWrap(True)
         self.text.setFont(_font(12.5))
         self.text.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+        self.text.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        # long text scrolls inside the popup
+        self.scroll = QScrollArea()
+        self.scroll.setWidget(self.text)
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.setStyleSheet(
+            "QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }"
+            "QScrollBar:vertical { background: transparent; width: 6px; margin: 2px; }"
+            "QScrollBar::handle:vertical { background: rgba(255,255,255,0.18); border-radius: 3px; }"
+            "QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page"
+            " { background: none; height: 0; }"
+        )
+        self.text.setStyleSheet("background: transparent;")
+        # copy button, bottom-right (only for written text and errors)
+        self.copy_btn = QPushButton("⧉  Copy", self)
+        self.copy_btn.setFont(_font(9.5, QFont.Weight.DemiBold))
+        self.copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.copy_btn.setStyleSheet(
+            "QPushButton { color: #e8e8f0; background: rgba(255,255,255,0.08);"
+            " border: 1px solid rgba(255,255,255,0.14); border-radius: 13px; padding: 4px 14px; }"
+            "QPushButton:hover { background: rgba(255,255,255,0.16); }"
+            "QPushButton:pressed { background: rgba(255,255,255,0.24); }"
+        )
+        self.copy_btn.clicked.connect(self._copy)
+        self.copy_btn.hide()
         self.input = QLineEdit()
         self.input.setFont(_font(13))
         self.input.setPlaceholderText("Type a command…   (Enter to send, Esc to close)")
@@ -127,7 +167,7 @@ class Overlay(QWidget):
         col.setSpacing(5)
         col.addStretch(1)
         col.addWidget(self.title)
-        col.addWidget(self.text)
+        col.addWidget(self.scroll)
         col.addWidget(self.input)
         col.addStretch(1)
 
@@ -136,6 +176,7 @@ class Overlay(QWidget):
         self._right = PAD + 28
         row.setContentsMargins(self._left, PAD + 16, self._right, PAD + 16)
         row.addLayout(col)
+        self._row = row
 
         # --- timers ---
         self._frame = QTimer(self, interval=16, timeout=self._tick)  # ~60 fps
@@ -156,28 +197,33 @@ class Overlay(QWidget):
         self._set("THINKING", f"“{said}”", "thinking", dim=True)
         self._pop_in()
 
-    def show_reply(self, text: str) -> None:
-        self._set(self.name.upper(), text, "reply")
+    def show_reply(self, text: str, copy: bool = False) -> None:
+        """Pixie's answer. copy=True when Pixie WROTE something for you (shows the Copy button)."""
+        self._set(self.name.upper(), text, "reply", copy=copy)
         self._pop_in()
         self._auto_hide(text)
 
-    def show_result(self, text: str) -> None:
+    def show_result(self, text: str, copy: bool = False) -> None:
         """A background task finished. Waits if you're in the middle of talking."""
         if self.state in BUSY:
-            self._queue.append(text)
+            self._queue.append((text, copy, False))
             return
-        if self.state == "result" and self.isVisible() and self.text.text():
+        if (not copy and self.state == "result" and not self._copy_text
+                and self.isVisible() and self.text.text()):
             # several tasks finished together -> stack them (max 4 lines)
             lines = (self.text.text().split("\n") + [text])[-4:]
             text = "\n".join(lines)
-        self._set("DONE", text, "result")
+        self._set("READY" if copy else "DONE", text, "result", copy=copy)
         self._pop_in()
         self._auto_hide(text)
 
     def show_error(self, text: str) -> None:
-        self._set("SOMETHING WENT WRONG", text, "error")
+        if self.state in ("listening", "transcribing", "typing"):  # don't interrupt you
+            self._queue.append((text, True, True))
+            return
+        self._set("SOMETHING WENT WRONG", text, "error", copy=True)
         self._pop_in()
-        self._hide_timer.start(6000)
+        self._auto_hide(text)
 
     def show_typing(self) -> None:
         self._prev_window = win.foreground()
@@ -189,30 +235,45 @@ class Overlay(QWidget):
         self.fade_out()
 
     # ============================================================ internals
-    def _set(self, title: str, text: str, state: str, dim: bool = False) -> None:
+    def _set(self, title: str, text: str, state: str, dim: bool = False, copy: bool = False) -> None:
         self.state = state
         c1, _ = PALETTE.get(state, PALETTE["reply"])
         self.title.setText(title)
         self.title.setStyleSheet(f"color: {c1};")
         self.text.setText(text)
-        self.text.setStyleSheet(f"color: {'#9a9ab0' if dim else '#f4f4f8'};")
-        self.text.setVisible(bool(text))
+        self.text.setStyleSheet(f"color: {'#9a9ab0' if dim else '#f4f4f8'}; background: transparent;")
+        # copyable text can also be selected with the mouse
+        self.text.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse if copy else Qt.TextInteractionFlag.NoTextInteraction
+        )
+        self.scroll.setVisible(bool(text))
+        self.scroll.verticalScrollBar().setValue(0)
         self.input.setVisible(state == "typing")
+        self._copy_text = text if copy and text else ""
+        self.copy_btn.setText("⧉  Copy")
+        self.copy_btn.setVisible(bool(self._copy_text))
         self._fit()
 
     def _fit(self) -> None:
         inner_w = self.width() - self._left - self._right
         h = self.title.sizeHint().height()
-        if self.text.isVisibleTo(self) and self.text.text():
-            text_h = self.text.heightForWidth(inner_w)
-            self.text.setMinimumHeight(text_h)  # make the layout give it all the lines
-            h += 5 + text_h
+        if self.scroll.isVisibleTo(self) and self.text.text():
+            text_h = self.text.heightForWidth(inner_w - 10)
+            view_h = min(text_h, MAX_TEXT_H)  # longer text scrolls
+            self.scroll.setFixedHeight(view_h)
+            h += 5 + view_h
         if self.input.isVisibleTo(self):
             h += 5 + self.input.sizeHint().height()
-        panel = max(MIN_H, min(MAX_H, h + 40))
+        copy_space = 0
+        if self.copy_btn.isVisibleTo(self):
+            copy_space = self.copy_btn.sizeHint().height() + 8
+        self._row.setContentsMargins(self._left, PAD + 16, self._right, PAD + 16 + copy_space)
+        max_h = MAX_TEXT_H + 120 if copy_space else MAX_H
+        panel = max(MIN_H, min(max_h, h + 40 + copy_space))
         self.setFixedHeight(panel + 2 * PAD)
         if self.layout():
             self.layout().activate()
+        self._place_copy_button()
         if self.isVisible():
             self.move(self._target_pos())
 
@@ -270,7 +331,42 @@ class Overlay(QWidget):
             self.input.setFocus()
 
     def _auto_hide(self, text: str) -> None:
-        self._hide_timer.start(max(3200, min(12000, 2200 + 45 * len(text))))
+        if self._copy_text:
+            self._hide_timer.start(COPY_HIDE_MS)
+        else:
+            self._hide_timer.start(max(3200, min(12000, 2200 + 45 * len(text))))
+
+    # ----------------------------------------------------------- copy button
+    def _place_copy_button(self) -> None:
+        b = self.copy_btn
+        b.adjustSize()
+        b.move(self.width() - PAD - 20 - b.width(), self.height() - PAD - 14 - b.height())
+        b.raise_()
+
+    def _copy(self) -> None:
+        if not self._copy_text:
+            return
+        QGuiApplication.clipboard().setText(self._copy_text)
+        self.copy_btn.setText("✓  Copied")
+        self._place_copy_button()
+        QTimer.singleShot(1800, self._reset_copy_label)
+        self._hide_timer.start(COPY_HIDE_MS)
+
+    def _reset_copy_label(self) -> None:
+        if self._copy_text:
+            self.copy_btn.setText("⧉  Copy")
+            self._place_copy_button()
+
+    def enterEvent(self, e) -> None:
+        # reading or about to click Copy -> don't disappear under the mouse
+        if self.state not in BUSY:
+            self._hide_timer.stop()
+        super().enterEvent(e)
+
+    def leaveEvent(self, e) -> None:
+        if self.isVisible() and self.state in ("reply", "result", "error"):
+            self._hide_timer.start(COPY_HIDE_MS // 3 if self._copy_text else 2500)
+        super().leaveEvent(e)
 
     def fade_out(self) -> None:
         if not self.isVisible():
@@ -294,7 +390,8 @@ class Overlay(QWidget):
         if was_typing:
             win.set_foreground(self._prev_window)
         if self._queue:
-            self.show_result(self._queue.pop(0))
+            text, copy, error = self._queue.pop(0)
+            self.show_error(text) if error else self.show_result(text, copy)
 
     def _submit(self) -> None:
         text = self.input.text().strip()
@@ -311,12 +408,16 @@ class Overlay(QWidget):
             super().keyPressEvent(e)
 
     def mousePressEvent(self, e) -> None:
-        if self.state not in BUSY:  # click to dismiss
+        if self.state not in BUSY and not self._copy_text:  # click to dismiss (not while copyable)
             self.fade_out()
 
     # ============================================================ painting
     def _tick(self) -> None:
-        self._phase += 0.016
+        # 60 fps while the orb reacts/spins, 30 fps when it just breathes (less CPU)
+        interval = 16 if self.state in ("listening", "thinking", "transcribing") else 33
+        if self._frame.interval() != interval:
+            self._frame.setInterval(interval)
+        self._phase += interval / 1000
         target = self._level_source() if self.state == "listening" else 0.0
         self._level += (target - self._level) * 0.35
         self._levels.append(self._level)

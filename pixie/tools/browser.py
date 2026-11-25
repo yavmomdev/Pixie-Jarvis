@@ -93,7 +93,8 @@ def open_url(url: str, background: bool = True, media: bool = False) -> None:
 
     if background:
         # media: let the page start playing (browsers pause never-shown pages), then minimize
-        keep_in_background(launch, watch=6, minimize_after=3.0 if media else 0.0)
+        expect = [os.path.basename(browser[0])] if browser else []
+        keep_in_background(launch, watch=6, minimize_after=3.0 if media else 0.0, expect=expect)
     else:
         launch()
 
@@ -159,17 +160,63 @@ def open_website(site: str, show: bool = False) -> str:
 
 @tool(
     "youtube_play",
-    "Find a video on YouTube and play it in the background (music, a video, a podcast...).",
-    {"query": {"type": "string", "description": "What to play, e.g. 'lofi hip hop' or 'MrBeast newest video'"}},
+    "Play something from YouTube (music, a podcast, a video's sound). By default it plays "
+    "INVISIBLY, with no browser window. Use show=true only if the user wants to WATCH the video.",
+    {
+        "query": {"type": "string", "description": "What to play, e.g. 'lofi hip hop' or a YouTube link"},
+        "show": {"type": "boolean", "description": "true = open the video in the browser to watch it"},
+    },
     ["query"],
 )
-def youtube_play(query: str) -> str:
+def youtube_play(query: str, show: bool = False) -> str:
+    if not show:
+        try:
+            from ..player import PLAYER, find_track
+
+            track = find_track(query)
+            PLAYER.play(track)
+            return f"Playing from YouTube: {track.title} ▶️"
+        except ImportError:
+            pass  # yt-dlp / audio libs missing -> use the browser
+        except Exception as e:  # e.g. YouTube's bot check -> fall back to a minimized browser window
+            print(f"[youtube] hidden player failed, using the browser: {e}")
     found = youtube_first_video(query)
     if not found:
         return f"Couldn't find '{query}' on YouTube."
     url, title = found
-    open_url(url, background=True, media=True)
-    return f"Playing on YouTube: {title} ▶️"
+    open_url(url, background=not show, media=True)
+    return f"Playing on YouTube: {title} ▶️" + ("" if show else " (in a minimized browser window)")
+
+
+@tool(
+    "youtube_control",
+    "Control YouTube audio that Pixie is playing: pause, resume, stop, volume (0-100), or what's playing.",
+    {
+        "action": {"type": "string", "enum": ["pause", "resume", "stop", "volume", "now_playing"]},
+        "volume": {"type": "integer", "description": "0-100, only for action=volume"},
+    },
+    ["action"],
+)
+def youtube_control(action: str, volume: int | None = None) -> str:
+    from ..player import PLAYER
+
+    if not PLAYER.playing:
+        return "Nothing from YouTube is playing."
+    title = PLAYER.track.title if PLAYER.track else "YouTube"
+    if action == "pause":
+        PLAYER.pause()
+        return f"Paused {title} ⏸️"
+    if action == "resume":
+        PLAYER.resume()
+        return f"Playing {title} ▶️"
+    if action == "stop":
+        PLAYER.stop()
+        return "Stopped YouTube ⏹️"
+    if action == "volume":
+        v = max(0, min(100, int(volume if volume is not None else 50)))
+        PLAYER.volume = v / 100
+        return f"YouTube volume {v}% 🔊"
+    return f"{'Paused' if PLAYER.paused else 'Playing'}: {title}"
 
 
 @tool(

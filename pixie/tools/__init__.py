@@ -36,6 +36,11 @@ class Tool:
         }
 
 
+class Copyable(str):
+    """Return this from a tool when the result is text the user will want to copy
+    (an email draft, a written text...). The popup then shows a Copy button."""
+
+
 TOOLS: dict[str, Tool] = {}
 
 

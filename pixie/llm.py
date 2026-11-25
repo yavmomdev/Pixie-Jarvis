@@ -18,14 +18,33 @@ def model() -> str:
     return CONFIG["ollama"]["model"]
 
 
+def _options() -> dict:
+    cfg = CONFIG["ollama"]
+    # Pixie's instructions + ~25 tool descriptions need more than Ollama's small default
+    # context window; if it's too small the model silently forgets part of them.
+    return {"temperature": 0.1, "num_ctx": int(cfg.get("num_ctx", 8192))}
+
+
 def chat(messages: list[dict], tools: list[dict] | None = None):
     """Raw chat call. Returns the Ollama response object."""
     return client().chat(
         model=model(),
         messages=messages,
         tools=tools or None,
-        options={"temperature": 0.2},
+        options=_options(),
+        keep_alive=CONFIG["ollama"].get("keep_alive", "2h"),  # stay loaded -> no reload delay
     )
+
+
+def warm_up() -> None:
+    """Load the model into (GPU) memory at startup, so the first command is fast."""
+    try:
+        client().chat(
+            model=model(), messages=[{"role": "user", "content": "hi"}],
+            options={**_options(), "num_predict": 1}, keep_alive=CONFIG["ollama"].get("keep_alive", "2h"),
+        )
+    except Exception as e:
+        print(f"[llm] warm-up failed: {e}")
 
 
 def complete(prompt: str, system: str | None = None) -> str:

@@ -98,6 +98,14 @@ def set_volume(action: str, level: int | None = None) -> str:
     ["action"],
 )
 def media_control(action: str) -> str:
+    from ..player import PLAYER
+
+    if PLAYER.playing and action in ("play_pause", "stop"):  # Pixie's own YouTube player
+        if action == "stop":
+            PLAYER.stop()
+            return "Stopped ⏹️"
+        PLAYER.toggle()
+        return "Paused ⏸️" if PLAYER.paused else "Playing ▶️"
     _require_windows()
     _press(VK.get(action, VK["play_pause"]))
     return {"play_pause": "Play/pause ⏯️", "next": "Next ⏭️", "previous": "Previous ⏮️", "stop": "Stopped ⏹️"}.get(
