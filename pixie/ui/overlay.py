@@ -41,6 +41,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -79,7 +80,8 @@ COMPACT = {"transcribing", "thinking"}
 COMPACT_W = 380
 COMPACT_MIN_H = 82
 COMPACT_ORB = 42
-COMPACT_OPACITY = 0.82
+COMPACT_OPACITY = 0.92  # whole window (keeps text and dots readable)
+COMPACT_GLASS = 150  # panel background alpha 0-255 while working: clearly see-through, text still readable
 
 
 def _font(size: float, weight=QFont.Weight.Normal, spacing: float = 0) -> QFont:
@@ -163,6 +165,13 @@ class Overlay(QWidget):
         )
         self.copy_btn.clicked.connect(self._copy)
         self.copy_btn.hide()
+        # soft shadow under the text keeps it readable on the see-through working pill
+        for label in (self.title, self.text):
+            shadow = QGraphicsDropShadowEffect(label)
+            shadow.setBlurRadius(8)
+            shadow.setOffset(0, 1)
+            shadow.setColor(QColor(0, 0, 0, 220))
+            label.setGraphicsEffect(shadow)
         self.input = QLineEdit()
         self.input.setFont(_font(13))
         self.input.setPlaceholderText("Type a command…   (Enter to send, Esc to close)")
@@ -257,7 +266,8 @@ class Overlay(QWidget):
             inner = COMPACT_W + 2 * PAD - self._left - self._right - 10
             text = self.text.fontMetrics().elidedText(text.replace("\n", " "), Qt.TextElideMode.ElideRight, inner)
         self.text.setText(text)
-        self.text.setStyleSheet(f"color: {'#9a9ab0' if dim else '#f4f4f8'}; background: transparent;")
+        color = "#ffffff" if compact else ("#9a9ab0" if dim else "#f4f4f8")
+        self.text.setStyleSheet(f"color: {color}; background: transparent;")
         # copyable text can also be selected with the mouse
         self.text.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse if copy else Qt.TextInteractionFlag.NoTextInteraction
@@ -489,14 +499,15 @@ class Overlay(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         for i in range(PAD, 0, -2):
             g = QColor(c1)
-            g.setAlpha(int(12 * (1 - i / PAD) ** 1.6))
+            g.setAlpha(int((6 if self.state in COMPACT else 12) * (1 - i / PAD) ** 1.6))
             p.setBrush(g)
             p.drawRoundedRect(r.adjusted(-i, -i, i, i), RADIUS + i, RADIUS + i)
 
         # glass panel
         bg = QLinearGradient(r.topLeft(), r.bottomLeft())
-        bg.setColorAt(0, QColor(24, 24, 34, 242))
-        bg.setColorAt(1, QColor(12, 12, 18, 242))
+        glass = COMPACT_GLASS if self.state in COMPACT else 242
+        bg.setColorAt(0, QColor(24, 24, 34, glass))
+        bg.setColorAt(1, QColor(12, 12, 18, glass))
         p.setBrush(bg)
         border = QLinearGradient(r.topLeft(), r.bottomRight())
         b1, b2 = QColor(c1), QColor(c2)
