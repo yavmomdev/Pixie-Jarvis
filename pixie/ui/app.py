@@ -54,8 +54,8 @@ class Controller(QObject):
     hold_cancel = Signal()
     double_tap = Signal()
     heard = Signal(str)
-    reply = Signal(str, bool)
-    result = Signal(str, bool)
+    reply = Signal(str, bool, bool)  # text, copyable, glass (short status -> small see-through pill)
+    result = Signal(str, bool, bool)
     error = Signal(str)
     nothing = Signal()
 
@@ -93,7 +93,9 @@ class Controller(QObject):
         self.nothing.connect(self.on_nothing)
 
         notify.add_listener(
-            lambda _title, msg, copy, error: self.error.emit(msg) if error else self.result.emit(msg, copy)
+            lambda _title, msg, copy, error, info: self.error.emit(msg)
+            if error
+            else self.result.emit(msg, copy, not copy and not info)  # plain status -> glass pill
         )
 
         self.ptt = PushToTalk(
@@ -117,7 +119,7 @@ class Controller(QObject):
             self.stt.load()
             print(f"🎙️  Speech model ready ({self.stt.model_size} on {self.stt.device}).")
             if time.time() - start > 8:  # it was downloading -> let the user know voice works now
-                self.result.emit("Voice is ready 🎙️ Hold Right Alt to talk.", False)
+                self.result.emit("Voice is ready 🎙️ Hold Right Alt to talk.", False, True)
         except Exception as e:
             self.error.emit(f"Couldn't load the speech model: {e}")
 
@@ -186,7 +188,8 @@ class Controller(QObject):
         for tool_name, args in decision.calls:
             self.tasks.submit(tool_name, args)
         print(f"{self.name}> {decision.reply}")
-        self.reply.emit(decision.reply or "…", decision.copyable)
+        # "On it 👍" while tools run -> glass pill; a real answer/text -> solid
+        self.reply.emit(decision.reply or "…", decision.copyable, bool(decision.calls))
 
 
 def run() -> None:

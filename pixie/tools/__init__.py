@@ -41,6 +41,12 @@ class Copyable(str):
     (an email draft, a written text...). The popup then shows a Copy button."""
 
 
+class Info(str):
+    """Return this when the result is information the user asked for (a search answer,
+    what's playing, a list...). The popup shows it solid and full-size, not as a small
+    see-through status pill."""
+
+
 TOOLS: dict[str, Tool] = {}
 
 

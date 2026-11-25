@@ -33,7 +33,8 @@ The AI runs **100% locally** through [Ollama](https://ollama.com), so it's free 
 | **Hold Right Alt** | 🔵 *Listening*: the orb and bars react to your voice |
 | **Release** | 🟣 *Thinking*: the popup shrinks to a small, see-through pill with loading dots while Pixie works |
 | | 💜 *Reply*, e.g. "On it 👍", then the popup fades away |
-| (task finishes) | 🟢 *Done*, e.g. "Playing your Liked Songs on shuffle 🎵" |
+| (task finishes) | 🟢 *Done*, e.g. "Playing your Liked Songs on shuffle 🎵": short status messages use the same small see-through pill |
+| (you asked Pixie to find something) | a solid, full-size popup: search answers, "what's playing", "what games do I have", PC status |
 | (Pixie wrote something / an error) | the text with a **⧉ Copy** button in the bottom-right corner |
 | **Double-tap Right Alt** | ⌨️ a text box. Enter sends, Esc closes |
 

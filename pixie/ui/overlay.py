@@ -76,7 +76,9 @@ PALETTE = {
 BUSY = {"listening", "transcribing", "thinking", "typing"}
 
 # while Pixie works, the popup shrinks to a small, slightly see-through pill with loading dots
-COMPACT = {"transcribing", "thinking"}
+COMPACT = {"transcribing", "thinking"}  # always the small pill (with loading dots)
+# short status replies/results ("On it", "Opened Discord") use the same small see-through pill;
+# written text, things you asked to find, and errors stay solid and full-size
 COMPACT_W = 380
 COMPACT_MIN_H = 82
 COMPACT_ORB = 42
@@ -113,8 +115,9 @@ class Overlay(QWidget):
         self._phase = 0.0
         self._level = 0.0
         self._levels: deque[float] = deque([0.0] * BARS, maxlen=BARS)
-        self._queue: list[tuple[str, bool, bool]] = []  # (text, copyable, is_error)
+        self._queue: list[tuple[str, bool, bool, bool]] = []  # (text, copyable, is_error, glass)
         self._copy_text = ""
+        self._glass = False  # small see-through pill for a short status message
         self._prev_window = None
         self._anim: QParallelAnimationGroup | None = None
         self._panel_w = WIDTH
@@ -217,29 +220,31 @@ class Overlay(QWidget):
         self._set("THINKING", f"“{said}”", "thinking", dim=True)
         self._pop_in()
 
-    def show_reply(self, text: str, copy: bool = False) -> None:
-        """Pixie's answer. copy=True when Pixie WROTE something for you (shows the Copy button)."""
-        self._set(self.name.upper(), text, "reply", copy=copy)
+    def show_reply(self, text: str, copy: bool = False, glass: bool = False) -> None:
+        """Pixie's answer. copy=True when Pixie WROTE something for you (shows the Copy button);
+        glass=True for a short status like "On it" (small see-through pill)."""
+        self._set(self.name.upper(), text, "reply", copy=copy, glass=glass and not copy)
         self._pop_in()
         self._auto_hide(text)
 
-    def show_result(self, text: str, copy: bool = False) -> None:
+    def show_result(self, text: str, copy: bool = False, glass: bool = False) -> None:
         """A background task finished. Waits if you're in the middle of talking."""
+        glass = glass and not copy
         if self.state in BUSY:
-            self._queue.append((text, copy, False))
+            self._queue.append((text, copy, False, glass))
             return
-        if (not copy and self.state == "result" and not self._copy_text
+        if (not copy and self.state == "result" and not self._copy_text and self._glass == glass
                 and self.isVisible() and self.text.text()):
             # several tasks finished together -> stack them (max 4 lines)
             lines = (self.text.text().split("\n") + [text])[-4:]
             text = "\n".join(lines)
-        self._set("READY" if copy else "DONE", text, "result", copy=copy)
+        self._set("READY" if copy else "DONE", text, "result", copy=copy, glass=glass)
         self._pop_in()
         self._auto_hide(text)
 
     def show_error(self, text: str) -> None:
         if self.state in ("listening", "transcribing", "typing"):  # don't interrupt you
-            self._queue.append((text, True, True))
+            self._queue.append((text, True, True, False))
             return
         self._set("SOMETHING WENT WRONG", text, "error", copy=True)
         self._pop_in()
@@ -255,14 +260,17 @@ class Overlay(QWidget):
         self.fade_out()
 
     # ============================================================ internals
-    def _set(self, title: str, text: str, state: str, dim: bool = False, copy: bool = False) -> None:
+    def _set(
+        self, title: str, text: str, state: str, dim: bool = False, copy: bool = False, glass: bool = False
+    ) -> None:
         self.state = state
+        self._glass = glass
         c1, _ = PALETTE.get(state, PALETTE["reply"])
         self.title.setText(title)
         self.title.setStyleSheet(f"color: {c1};")
-        compact = state in COMPACT
-        self._set_margins(compact)
-        if compact and text:  # one line in the small pill
+        compact = self._compact
+        self._set_margins(compact, dots=state in COMPACT)
+        if state in COMPACT and text:  # one line in the working pill
             inner = COMPACT_W + 2 * PAD - self._left - self._right - 10
             text = self.text.fontMetrics().elidedText(text.replace("\n", " "), Qt.TextElideMode.ElideRight, inner)
         self.text.setText(text)
@@ -294,11 +302,11 @@ class Overlay(QWidget):
         copy_space = 0
         if self.copy_btn.isVisibleTo(self):
             copy_space = self.copy_btn.sizeHint().height() + 8
-        vpad = 10 if self.state in COMPACT else 16
+        vpad = 10 if self._compact else 16
         self._row.setContentsMargins(self._left, PAD + vpad, self._right, PAD + vpad + copy_space)
         max_h = MAX_TEXT_H + 120 if copy_space else MAX_H
-        min_h = COMPACT_MIN_H if self.state in COMPACT else MIN_H
-        panel = max(min_h, min(max_h, h + (28 if self.state in COMPACT else 40) + copy_space))
+        min_h = COMPACT_MIN_H if self._compact else MIN_H
+        panel = max(min_h, min(max_h, h + (28 if self._compact else 40) + copy_space))
         self.setFixedHeight(panel + 2 * PAD)
         if self.layout():
             self.layout().activate()
@@ -365,15 +373,19 @@ class Overlay(QWidget):
             self.input.setFocus()
 
     # ----------------------------------------------------- compact (working) mode
-    def _orb_size(self) -> float:
-        return COMPACT_ORB if self.state in COMPACT else ORB
+    @property
+    def _compact(self) -> bool:
+        return self.state in COMPACT or self._glass
 
-    def _set_margins(self, compact: bool) -> None:
+    def _orb_size(self) -> float:
+        return COMPACT_ORB if self._compact else ORB
+
+    def _set_margins(self, compact: bool, dots: bool = False) -> None:
         self._left = PAD + (18 if compact else 26) + (COMPACT_ORB if compact else ORB) + (16 if compact else 22)
-        self._right = PAD + (28 + 46 if compact else 28)  # room for the loading dots
+        self._right = PAD + 28 + (46 if dots else 0)  # room for the loading dots
 
     def _target_opacity(self) -> float:
-        return COMPACT_OPACITY if self.state in COMPACT else 1.0
+        return COMPACT_OPACITY if self._compact else 1.0
 
     def _resize_to(self, panel_w: int) -> None:
         """Smoothly grow/shrink the popup width (kept centered)."""
@@ -456,8 +468,8 @@ class Overlay(QWidget):
         if was_typing:
             win.set_foreground(self._prev_window)
         if self._queue:
-            text, copy, error = self._queue.pop(0)
-            self.show_error(text) if error else self.show_result(text, copy)
+            text, copy, error, glass = self._queue.pop(0)
+            self.show_error(text) if error else self.show_result(text, copy, glass)
 
     def _submit(self) -> None:
         text = self.input.text().strip()
@@ -499,13 +511,13 @@ class Overlay(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         for i in range(PAD, 0, -2):
             g = QColor(c1)
-            g.setAlpha(int((6 if self.state in COMPACT else 12) * (1 - i / PAD) ** 1.6))
+            g.setAlpha(int((6 if self._compact else 12) * (1 - i / PAD) ** 1.6))
             p.setBrush(g)
             p.drawRoundedRect(r.adjusted(-i, -i, i, i), RADIUS + i, RADIUS + i)
 
         # glass panel
         bg = QLinearGradient(r.topLeft(), r.bottomLeft())
-        glass = COMPACT_GLASS if self.state in COMPACT else 242
+        glass = COMPACT_GLASS if self._compact else 242
         bg.setColorAt(0, QColor(24, 24, 34, glass))
         bg.setColorAt(1, QColor(12, 12, 18, glass))
         p.setBrush(bg)
@@ -518,12 +530,12 @@ class Overlay(QWidget):
         p.setPen(QPen(border, 1.2))
         p.drawRoundedRect(r, RADIUS, RADIUS)
 
-        compact = self.state in COMPACT
+        compact = self._compact
         orb = self._orb_size()
         self._paint_orb(p, QPointF(r.left() + (18 if compact else 26) + orb / 2, r.center().y()), c1, c2)
         if self.state == "listening":
             self._paint_bars(p, r, c1, c2)
-        elif compact:
+        elif self.state in COMPACT:
             self._paint_dots(p, r, c1, c2)
         p.end()
 
@@ -571,7 +583,7 @@ class Overlay(QWidget):
             ring.setColorAt(1.0, r0)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(ring, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-            ring_r = self._orb_size() / 2 + (6 if self.state in COMPACT else 9)
+            ring_r = self._orb_size() / 2 + (6 if self._compact else 9)
             p.drawEllipse(c, ring_r, ring_r)
 
     def _paint_dots(self, p: QPainter, r: QRectF, c1: QColor, c2: QColor) -> None:

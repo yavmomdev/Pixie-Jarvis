@@ -11,7 +11,7 @@ import itertools
 from dataclasses import dataclass
 
 from .notify import notify
-from .tools import TOOLS, Copyable
+from .tools import TOOLS, Copyable, Info
 
 
 @dataclass
@@ -40,10 +40,12 @@ class TaskRunner:
         if t is None:
             notify(self.name, f"I don't know how to '{job.tool}' yet.", True, True)
             return
+        info = False
         async with self._sem:
             try:
                 result = await asyncio.to_thread(t.fn, **job.args)
                 copyable, error = isinstance(result, Copyable), False
+                info = isinstance(result, Info)
             except TypeError as e:  # the LLM sent bad arguments
                 result, copyable, error = f"{job.tool}: wrong arguments ({e})", True, True
             except RuntimeError as e:  # our own friendly messages ("Spotify isn't set up...")
@@ -51,7 +53,7 @@ class TaskRunner:
                 result, copyable, error = str(e), True, True
             except Exception as e:
                 result, copyable, error = f"{job.tool} failed: {e}", True, True  # errors can be copied
-        notify(self.name, str(result), copyable, error)
+        notify(self.name, str(result), copyable, error, info if not error else False)
 
     @property
     def active(self) -> int:

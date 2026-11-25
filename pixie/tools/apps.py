@@ -8,7 +8,7 @@ import sys
 
 from ..app_index import INDEX, App, normalize
 from ..winctl import keep_in_background
-from . import tool
+from . import Info, tool
 
 IS_WINDOWS = sys.platform == "win32"
 SW_SHOWMINNOACTIVE = 7  # minimized, does NOT take focus
@@ -197,4 +197,4 @@ def list_apps(filter: str = "") -> str:
         return f"No apps found{f' for {filter}' if f else ''}."
     names = sorted({a.name for a in apps}, key=str.lower)
     more = f" (+{len(names) - 40} more)" if len(names) > 40 else ""
-    return f"{len(names)} found: " + ", ".join(names[:40]) + more
+    return Info(f"{len(names)} found: " + ", ".join(names[:40]) + more)

@@ -10,7 +10,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import tool
+from . import Info, tool
 
 IS_WINDOWS = sys.platform == "win32"
 CREATE_NO_WINDOW = 0x08000000
@@ -214,4 +214,4 @@ def system_status() -> str:
     parts.append(f"RAM {mem.percent:.0f}% of {mem.total / 2**30:.0f} GB")
     disk = psutil.disk_usage(str(Path.home().anchor or "/"))
     parts.append(f"Disk {disk.free / 2**30:.0f} GB free")
-    return " · ".join(parts)
+    return Info(" · ".join(parts))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .. import llm
 from ..config import CONFIG
-from . import tool
+from . import Info, tool
 
 
 def _ddg(query: str, n: int) -> list[dict]:
@@ -29,9 +29,9 @@ def web_search(query: str) -> str:
         f"[{i + 1}] {r.get('title', '')}\n{r.get('body', '')}\n{r.get('href', '')}"
         for i, r in enumerate(results)
     )
-    return llm.complete(
+    return Info(llm.complete(
         f"Question: {query}\n\nSearch results:\n{sources}\n\n"
         "Answer the question in 2-4 short sentences using only these results. "
         "End with the most useful source link.",
         system="You summarize web search results accurately and briefly.",
-    )
+    ))

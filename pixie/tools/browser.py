@@ -17,7 +17,7 @@ import urllib.request
 from functools import lru_cache
 
 from ..winctl import keep_in_background
-from . import tool
+from . import Info, tool
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -216,7 +216,7 @@ def youtube_control(action: str, volume: int | None = None) -> str:
         v = max(0, min(100, int(volume if volume is not None else 50)))
         PLAYER.volume = v / 100
         return f"YouTube volume {v}% 🔊"
-    return f"{'Paused' if PLAYER.paused else 'Playing'}: {title}"
+    return Info(f"{'Paused' if PLAYER.paused else 'Playing'}: {title}")
 
 
 @tool(

@@ -15,7 +15,7 @@ from functools import lru_cache
 from ..app_index import INDEX, normalize
 from ..config import CONFIG, ROOT
 from ..winctl import keep_in_background
-from . import tool
+from . import Info, tool
 from .apps import launch_app, launch_background
 
 SCOPES = (
@@ -233,7 +233,7 @@ def spotify_now_playing() -> str:
         return "Nothing is playing on Spotify."
     item = cur["item"]
     state = "Playing" if cur.get("is_playing") else "Paused"
-    return f"{state}: {item['name']}{_who(item)}"
+    return Info(f"{state}: {item['name']}{_who(item)}")
 
 
 @tool(
