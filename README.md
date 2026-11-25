@@ -31,7 +31,7 @@ The AI runs **100% locally** through [Ollama](https://ollama.com), so it's free 
 | You do | Pixie shows |
 |---|---|
 | **Hold Right Alt** | 🔵 *Listening*: the orb and bars react to your voice |
-| **Release** | 🟣 *Thinking*: what you said, while it decides |
+| **Release** | 🟣 *Thinking*: the popup shrinks to a small, see-through pill with loading dots while Pixie works |
 | | 💜 *Reply*, e.g. "On it 👍", then the popup fades away |
 | (task finishes) | 🟢 *Done*, e.g. "Playing your Liked Songs on shuffle 🎵" |
 | (Pixie wrote something / an error) | the text with a **⧉ Copy** button in the bottom-right corner |

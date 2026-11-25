@@ -25,6 +25,7 @@ from PySide6.QtCore import (
     QRectF,
     Qt,
     QTimer,
+    QVariantAnimation,
     Signal,
 )
 from PySide6.QtGui import (
@@ -73,6 +74,13 @@ PALETTE = {
 }
 BUSY = {"listening", "transcribing", "thinking", "typing"}
 
+# while Pixie works, the popup shrinks to a small, slightly see-through pill with loading dots
+COMPACT = {"transcribing", "thinking"}
+COMPACT_W = 380
+COMPACT_MIN_H = 82
+COMPACT_ORB = 42
+COMPACT_OPACITY = 0.82
+
 
 def _font(size: float, weight=QFont.Weight.Normal, spacing: float = 0) -> QFont:
     f = QFont("Segoe UI Variable Display")
@@ -107,6 +115,8 @@ class Overlay(QWidget):
         self._copy_text = ""
         self._prev_window = None
         self._anim: QParallelAnimationGroup | None = None
+        self._panel_w = WIDTH
+        self._width_anim: QVariantAnimation | None = None
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -116,6 +126,7 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)  # don't steal focus
         self.setFixedWidth(WIDTH + 2 * PAD)
+        self.setWindowOpacity(1.0)
 
         # --- widgets ---
         self.title = QLabel()
@@ -240,6 +251,11 @@ class Overlay(QWidget):
         c1, _ = PALETTE.get(state, PALETTE["reply"])
         self.title.setText(title)
         self.title.setStyleSheet(f"color: {c1};")
+        compact = state in COMPACT
+        self._set_margins(compact)
+        if compact and text:  # one line in the small pill
+            inner = COMPACT_W + 2 * PAD - self._left - self._right - 10
+            text = self.text.fontMetrics().elidedText(text.replace("\n", " "), Qt.TextElideMode.ElideRight, inner)
         self.text.setText(text)
         self.text.setStyleSheet(f"color: {'#9a9ab0' if dim else '#f4f4f8'}; background: transparent;")
         # copyable text can also be selected with the mouse
@@ -252,6 +268,7 @@ class Overlay(QWidget):
         self._copy_text = text if copy and text else ""
         self.copy_btn.setText("⧉  Copy")
         self.copy_btn.setVisible(bool(self._copy_text))
+        self._resize_to(COMPACT_W if compact else WIDTH)
         self._fit()
 
     def _fit(self) -> None:
@@ -267,9 +284,11 @@ class Overlay(QWidget):
         copy_space = 0
         if self.copy_btn.isVisibleTo(self):
             copy_space = self.copy_btn.sizeHint().height() + 8
-        self._row.setContentsMargins(self._left, PAD + 16, self._right, PAD + 16 + copy_space)
+        vpad = 10 if self.state in COMPACT else 16
+        self._row.setContentsMargins(self._left, PAD + vpad, self._right, PAD + vpad + copy_space)
         max_h = MAX_TEXT_H + 120 if copy_space else MAX_H
-        panel = max(MIN_H, min(max_h, h + 40 + copy_space))
+        min_h = COMPACT_MIN_H if self.state in COMPACT else MIN_H
+        panel = max(min_h, min(max_h, h + (28 if self.state in COMPACT else 40) + copy_space))
         self.setFixedHeight(panel + 2 * PAD)
         if self.layout():
             self.layout().activate()
@@ -312,7 +331,7 @@ class Overlay(QWidget):
             self._frame.start()
             fade = QPropertyAnimation(self, b"windowOpacity", self)
             fade.setDuration(170)
-            fade.setEndValue(1.0)
+            fade.setEndValue(self._target_opacity())
             slide = QPropertyAnimation(self, b"pos", self)
             slide.setDuration(260)
             slide.setEndValue(target)
@@ -322,13 +341,50 @@ class Overlay(QWidget):
             self._anim.addAnimation(slide)
             self._anim.start()
         else:
-            self.setWindowOpacity(1.0)
+            fade = QPropertyAnimation(self, b"windowOpacity", self)
+            fade.setDuration(160)
+            fade.setEndValue(self._target_opacity())
+            self._anim = QParallelAnimationGroup(self)
+            self._anim.addAnimation(fade)
+            self._anim.start()
             self.move(target)
         if focus:
             self.raise_()
             self.activateWindow()
             win.set_foreground(int(self.winId()))
             self.input.setFocus()
+
+    # ----------------------------------------------------- compact (working) mode
+    def _orb_size(self) -> float:
+        return COMPACT_ORB if self.state in COMPACT else ORB
+
+    def _set_margins(self, compact: bool) -> None:
+        self._left = PAD + (18 if compact else 26) + (COMPACT_ORB if compact else ORB) + (16 if compact else 22)
+        self._right = PAD + (28 + 46 if compact else 28)  # room for the loading dots
+
+    def _target_opacity(self) -> float:
+        return COMPACT_OPACITY if self.state in COMPACT else 1.0
+
+    def _resize_to(self, panel_w: int) -> None:
+        """Smoothly grow/shrink the popup width (kept centered)."""
+        if self._width_anim:
+            self._width_anim.stop()
+        if not self.isVisible() or panel_w == self._panel_w:
+            self._apply_width(panel_w)
+            return
+        anim = QVariantAnimation(self)
+        anim.setDuration(200)
+        anim.setStartValue(self._panel_w)
+        anim.setEndValue(panel_w)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.valueChanged.connect(lambda v: self._apply_width(int(v)))
+        self._width_anim = anim
+        anim.start()
+
+    def _apply_width(self, panel_w: int) -> None:
+        self._panel_w = panel_w
+        self.setFixedWidth(panel_w + 2 * PAD)
+        self._fit()
 
     def _auto_hide(self, text: str) -> None:
         if self._copy_text:
@@ -451,9 +507,13 @@ class Overlay(QWidget):
         p.setPen(QPen(border, 1.2))
         p.drawRoundedRect(r, RADIUS, RADIUS)
 
-        self._paint_orb(p, QPointF(r.left() + 26 + ORB / 2, r.center().y()), c1, c2)
+        compact = self.state in COMPACT
+        orb = self._orb_size()
+        self._paint_orb(p, QPointF(r.left() + (18 if compact else 26) + orb / 2, r.center().y()), c1, c2)
         if self.state == "listening":
             self._paint_bars(p, r, c1, c2)
+        elif compact:
+            self._paint_dots(p, r, c1, c2)
         p.end()
 
     def _paint_orb(self, p: QPainter, c: QPointF, c1: QColor, c2: QColor) -> None:
@@ -464,7 +524,7 @@ class Overlay(QWidget):
             s = 0.86 + 0.06 * math.sin(t * 5)
         else:
             s = 0.9 + 0.03 * math.sin(t * 2)
-        rad = ORB / 2 * s
+        rad = self._orb_size() / 2 * s
 
         # halo
         halo = QRadialGradient(c, rad * 1.9)
@@ -500,7 +560,21 @@ class Overlay(QWidget):
             ring.setColorAt(1.0, r0)
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(ring, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-            p.drawEllipse(c, ORB / 2 + 9, ORB / 2 + 9)
+            ring_r = self._orb_size() / 2 + (6 if self.state in COMPACT else 9)
+            p.drawEllipse(c, ring_r, ring_r)
+
+    def _paint_dots(self, p: QPainter, r: QRectF, c1: QColor, c2: QColor) -> None:
+        """Three bouncing dots: 'working on it'."""
+        p.setPen(Qt.PenStyle.NoPen)
+        x0 = r.right() - 28 - 2 * 13
+        cy = r.center().y()
+        for i in range(3):
+            wave = math.sin(self._phase * 7 - i * 0.9)
+            col = QColor(c1 if i % 2 == 0 else c2)
+            col.setAlpha(int(140 + 115 * max(0.0, wave)))
+            p.setBrush(col)
+            rad = 3.4 + 1.2 * max(0.0, wave)
+            p.drawEllipse(QPointF(x0 + i * 13, cy - 4 * max(0.0, wave)), rad, rad)
 
     def _paint_bars(self, p: QPainter, r: QRectF, c1: QColor, c2: QColor) -> None:
         bw, gap = 3.0, 3.0

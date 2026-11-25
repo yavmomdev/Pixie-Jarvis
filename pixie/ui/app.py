@@ -148,10 +148,7 @@ class Controller(QObject):
         if self.stt.ready:
             self.overlay.show_transcribing()
         else:
-            self.overlay.show_transcribing(
-                f"Downloading the speech model ({self.stt.model_size}), first time only. "
-                "Your command will run when it's done. Tip: double-tap Right Alt to type meanwhile."
-            )
+            self.overlay.show_transcribing("Downloading speech model (first time only)…")
 
         def job() -> None:
             try:
